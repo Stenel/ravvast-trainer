@@ -32,6 +32,38 @@ export function freeScreen(ctx: AppCtx): Screen {
     heard.textContent = `${notes} · чистота ${clarityPercent(ev.clarity)}% · ${Math.round(ev.levelDb)} дБ`;
   });
 
+  const RECORD_SECONDS = 15;
+  const recordBtn = h(
+    'button',
+    {
+      class: 'btn',
+      type: 'button',
+      onclick: () => {
+        recordBtn.disabled = true;
+        recordBtn.textContent = `Идёт запись ${RECORD_SECONDS} с — играйте…`;
+        ctx.mic
+          .record(RECORD_SECONDS)
+          .then((blob) => {
+            const url = URL.createObjectURL(blob);
+            const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
+            const link = h('a', { href: url, download: `rav-${stamp}.wav` });
+            document.body.append(link);
+            link.click();
+            link.remove();
+            window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+            recordBtn.textContent = 'Файл сохранён. Записать ещё';
+          })
+          .catch(() => {
+            recordBtn.textContent = 'Запись не удалась — включите микрофон';
+          })
+          .finally(() => {
+            recordBtn.disabled = false;
+          });
+      },
+    },
+    `Записать ${RECORD_SECONDS} с для диагностики`,
+  );
+
   const el = h(
     'div',
     { class: 'screen' },
@@ -47,6 +79,7 @@ export function freeScreen(ctx: AppCtx): Screen {
         ? 'Играйте на инструменте — распознанные поля подсвечиваются.'
         : 'Касайтесь полей или нажимайте клавиши с их номерами — 0 это центр.',
     ),
+    ctx.mic.enabled ? h('div', { class: 'row center' }, recordBtn) : '',
   );
   return {
     el,

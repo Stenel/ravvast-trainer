@@ -26,6 +26,37 @@ export type MicEvent =
 
 const SETTINGS_KEY = 'ravvast-trainer:mic:v1';
 const RATIO: Record<Sensitivity, number> = { low: 2.2, normal: 1.7, high: 1.35 };
+/** Во сколько раз (по мощности) удар должен быть громче фона. */
+const NOISE_FACTOR: Record<Sensitivity, number> = { low: 20, normal: 8, high: 4 };
+
+/** Моно WAV, 16 бит. */
+export function encodeWav(chunks: Float32Array[], sampleRate: number): Blob {
+  const length = chunks.reduce((n, c) => n + c.length, 0);
+  const view = new DataView(new ArrayBuffer(44 + length * 2));
+  const text = (offset: number, s: string) => {
+    for (let i = 0; i < s.length; i++) view.setUint8(offset + i, s.charCodeAt(i));
+  };
+  text(0, 'RIFF');
+  view.setUint32(4, 36 + length * 2, true);
+  text(8, 'WAVEfmt ');
+  view.setUint32(16, 16, true);
+  view.setUint16(20, 1, true);
+  view.setUint16(22, 1, true);
+  view.setUint32(24, sampleRate, true);
+  view.setUint32(28, sampleRate * 2, true);
+  view.setUint16(32, 2, true);
+  view.setUint16(34, 16, true);
+  text(36, 'data');
+  view.setUint32(40, length * 2, true);
+  let offset = 44;
+  for (const chunk of chunks) {
+    for (let i = 0; i < chunk.length; i++, offset += 2) {
+      const s = Math.max(-1, Math.min(1, chunk[i]));
+      view.setInt16(offset, Math.round(s * 32767), true);
+    }
+  }
+  return new Blob([view], { type: 'audio/wav' });
+}
 export const MAX_LATENCY_MS = 400;
 
 /** Микрофон: захват звука, распознавание ударов, настройки и калибровка. */
@@ -47,6 +78,8 @@ export class MicInput {
   private frameOffset: number | null = null;
   private starting: Promise<boolean> | null = null;
   private gen = 0;
+  private recording: { chunks: Float32Array[]; left: number; done: (b: Blob) => void } | null =
+    null;
   private readonly listeners = new Set<(ev: MicEvent) => void>();
   private readonly statusListeners = new Set<() => void>();
 
@@ -218,6 +251,7 @@ export class MicInput {
       sampleRate: sr,
       templates: c && c.sampleRate === sr ? c.templates : defaultTemplates(this.scale.tongues, sr),
       ratio: RATIO[this.sensitivity],
+      noiseFactor: NOISE_FACTOR[this.sensitivity],
     });
     this.frameOffset = null;
   }
@@ -234,6 +268,15 @@ export class MicInput {
 
   private onSamples(samples: Float32Array, frame: number): void {
     if (!this.detector || !this.enabled) return;
+    if (this.recording) {
+      this.recording.chunks.push(samples.slice());
+      this.recording.left -= samples.length;
+      if (this.recording.left <= 0) {
+        const { chunks, done } = this.recording;
+        this.recording = null;
+        done(encodeWav(chunks, this.ctx!.sampleRate));
+      }
+    }
     let sum = 0;
     for (let i = 0; i < samples.length; i++) sum += samples[i] * samples[i];
     this.levelDb = 10 * Math.log10(sum / Math.max(1, samples.length) + 1e-12);
@@ -269,6 +312,15 @@ export class MicInput {
         }
       }
     }
+  }
+
+  /** Записывает сырой звук с микрофона и возвращает WAV-файл (для диагностики распознавания). */
+  record(seconds: number): Promise<Blob> {
+    if (!this.ctx || this.status !== 'on') return Promise.reject(new Error('Микрофон не включён'));
+    if (this.recording) return Promise.reject(new Error('Запись уже идёт'));
+    return new Promise((done) => {
+      this.recording = { chunks: [], left: Math.round(seconds * this.ctx!.sampleRate), done };
+    });
   }
 
   /** Запрашивает доступ и начинает слушать. Вызывать из обработчика нажатия. */
@@ -362,6 +414,7 @@ export class MicInput {
     this.ctx = null;
     this.detector = null;
     this.frameOffset = null;
+    this.recording = null;
     if (this.status !== 'off') this.setStatus('off');
   }
 }

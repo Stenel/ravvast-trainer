@@ -40,6 +40,14 @@ const FLUX_HANN = Float64Array.from({ length: FLUX_WINDOW }, (_, i) =>
 // Порог тишины низкий: микрофоны телефонов почти не слышат основной тон низких полей
 // (E2 = 82 Гц), до распознавателя доходят только слабые обертоны.
 const ENERGY_FLOOR = 0.0008 ** 2;
+// Адаптивный порог: удар должен быть заметно громче фона. Фон — минимум энергии за ~30 с.
+const NOISE_BUCKET_HOPS = 375; // ~2 с
+const NOISE_BUCKETS = 15;
+/** Порог не поднимается выше этой доли от недавних громких ударов (иначе глушил бы тихие ноты). */
+const PEAK_FRACTION = 0.02;
+/** Доля энергии в 10 самых сильных полосах: у ноты она высокая, у шума — низкая. */
+const MIN_TONALITY = 0.5;
+const TONALITY_BANDS = 10;
 const BUFFER = 1 << 17;
 const MASK = BUFFER - 1;
 
@@ -168,6 +176,8 @@ export interface DetectorOptions {
   templates: Record<string, ArrayLike<number>>;
   /** Во сколько раз энергия должна превысить недавний максимум. Меньше — чувствительнее. */
   ratio?: number;
+  /** Во сколько раз (по мощности) удар должен превышать фоновый шум. По умолчанию 8 (~9 дБ). */
+  noiseFactor?: number;
 }
 
 interface Pending {
@@ -196,12 +206,19 @@ export class HitDetector {
   private readonly fluxIm = new Float64Array(FLUX_WINDOW);
   private readonly fluxHist: Float32Array[] = [];
   private refractory = 0;
+  private readonly noiseFactor: number;
+  private readonly bucketMin: number[] = [];
+  private readonly bucketMax: number[] = [];
+  private curMin = Infinity;
+  private curMax = 0;
+  private bucketHops = 0;
   private pending: Pending[] = [];
   private nextId = 1;
 
   constructor(opts: DetectorOptions) {
     this.sr = opts.sampleRate;
     this.ratio = opts.ratio ?? 1.7;
+    this.noiseFactor = opts.noiseFactor ?? 8;
     this.ids = Object.keys(opts.templates);
     this.templates = this.ids.map((id) => opts.templates[id]);
     for (let a = 0; a < this.ids.length; a++) {
@@ -250,8 +267,10 @@ export class HitDetector {
 
     const fluxHit = this.spectralFlux();
 
+    const gate = this.updateGate(winE);
+
     if (this.refractory > 0) this.refractory--;
-    else if (this.histE.length >= ENERGY_HOPS && winE > ENERGY_FLOOR) {
+    else if (this.histE.length >= ENERGY_HOPS && winE > gate) {
       const maxE = Math.max(...this.histE);
       const maxD = Math.max(...this.histD);
       const energyHit = winE > this.ratio * maxE || winD > this.ratio * 1.5 * maxD;
@@ -271,6 +290,37 @@ export class HitDetector {
       this.histE.shift();
       this.histD.shift();
     }
+  }
+
+  /** Текущий уровень фонового шума (мощность), по минимуму за последние ~30 с. */
+  get noiseEnergy(): number {
+    const m = Math.min(this.curMin, ...this.bucketMin);
+    return Number.isFinite(m) ? m : 0;
+  }
+
+  /** Обновляет оценку фона и возвращает порог энергии, ниже которого удары не ищутся. */
+  private updateGate(winE: number): number {
+    if (this.histE.length >= ENERGY_HOPS) {
+      if (winE < this.curMin) this.curMin = winE;
+      if (winE > this.curMax) this.curMax = winE;
+      if (++this.bucketHops >= NOISE_BUCKET_HOPS) {
+        this.bucketMin.push(this.curMin);
+        this.bucketMax.push(this.curMax);
+        if (this.bucketMin.length > NOISE_BUCKETS) {
+          this.bucketMin.shift();
+          this.bucketMax.shift();
+        }
+        this.curMin = Infinity;
+        this.curMax = 0;
+        this.bucketHops = 0;
+      }
+    }
+    const noise = this.noiseEnergy;
+    const peak = Math.max(this.curMax, ...this.bucketMax);
+    // Во время плотной игры «минимум» — это ещё звучащие ноты, а не фон; тогда порог
+    // ограничиваем долей от недавних громких ударов, чтобы не терять тихие ноты.
+    const adaptive = Math.min(this.noiseFactor * noise, PEAK_FRACTION * peak);
+    return Math.max(ENERGY_FLOOR, adaptive);
   }
 
   /**
@@ -334,9 +384,19 @@ export class HitDetector {
     // Повторный удар по ещё звучащему полю даёт неполный «отпечаток»: принимаем его,
     // если одно поле уверенно опережает все остальные.
     const second = scores.length > 1 ? Math.max(0, scores[1].similarity) : 0;
-    const dominant = bestSim >= DOMINANT_MIN_SIMILARITY && bestSim >= DOMINANT_RATIO * second;
+    // Шум размазан по всем полосам, нота сосредоточена в нескольких: шумоподобный звук
+    // не считаем ударом, даже если он случайно похож на какой-то шаблон.
+    const sorted = Array.from(feature, (x) => x * x).sort((a, b) => b - a);
+    let tonality = 0;
+    for (let i = 0; i < TONALITY_BANDS; i++) tonality += sorted[i];
+    const tonal = tonality >= MIN_TONALITY;
+    const dominant =
+      tonal &&
+      fresh / total >= 0.2 &&
+      bestSim >= DOMINANT_MIN_SIMILARITY &&
+      bestSim >= DOMINANT_RATIO * second;
     let tongues: string[] =
-      best >= 0 && (bestSim >= MIN_SIMILARITY || dominant) ? [this.ids[best]] : [];
+      best >= 0 && ((tonal && bestSim >= MIN_SIMILARITY) || dominant) ? [this.ids[best]] : [];
     let clarity = bestSim;
     const single = new Float64Array(this.ids.length);
     for (const s of scores) single[s.i] = s.similarity;
@@ -344,7 +404,7 @@ export class HitDetector {
     for (const pair of this.pairs) {
       // Оба поля аккорда должны быть слышны и по отдельности: иначе одиночная нота
       // с обертоном в октаву (B2 → B3) принималась бы за аккорд.
-      if (Math.min(single[pair.a], single[pair.b]) < PAIR_MEMBER_MIN) continue;
+      if (!tonal || Math.min(single[pair.a], single[pair.b]) < PAIR_MEMBER_MIN) continue;
       const s = cosine(feature, pair.t);
       if (s >= PAIR_MIN_SIMILARITY && s > bestSim + PAIR_MARGIN && s > pairSim) {
         pairSim = s;
