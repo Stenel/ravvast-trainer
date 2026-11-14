@@ -3,6 +3,7 @@
   "title": "Перебор с басом",
   "scale": "e-low-pygmy",
   "bpm": 96,
+  "level": 1,
   "notes": [
     { "tongue": "0", "beat": 0, "duration": 1 },
     { "tongue": "4", "beat": 1, "duration": 1 },

@@ -1,11 +1,71 @@
 import { MUTED_RATIO, clarityPercent } from '../core/quality';
+import { type RecordedHit, hitsToComposition } from '../core/record';
+import { saveImported } from '../data';
 import { type AppCtx, type Screen, h, levelMeter, noteOf, playTap, topBar } from './dom';
 import { createInstrument } from './instrument';
 
 export function freeScreen(ctx: AppCtx): Screen {
+  // Запись импровизации: удары (с экрана или с микрофона) превращаются в композицию.
+  const MAX_TAKE_NOTES = 2000;
+  let take: RecordedHit[] | null = null;
+  let alive = true;
+  const takeBtn = h('button', { class: 'btn', type: 'button', onclick: toggleTake });
+  const takeMsg = h('p', { class: 'hint', role: 'status' });
+
+  function capture(tongue: string, timeMs: number): void {
+    if (!take) return;
+    if (take.length >= MAX_TAKE_NOTES) {
+      takeMsg.textContent = `Достигнут предел в ${MAX_TAKE_NOTES} нот — остановите запись.`;
+      return;
+    }
+    take.push({ tongue, timeMs });
+    renderTake();
+  }
+
+  function renderTake(): void {
+    takeBtn.textContent = take
+      ? `Остановить и сохранить (нот: ${take.length})`
+      : 'Записать свою композицию';
+    takeBtn.classList.toggle('primary', take !== null);
+  }
+
+  function toggleTake(): void {
+    if (!take) {
+      take = [];
+      takeMsg.textContent = 'Играйте — каждая нота записывается.';
+      renderTake();
+      return;
+    }
+    const hits = take;
+    take = null;
+    renderTake();
+    if (hits.length < 2) {
+      takeMsg.textContent = 'Слишком мало нот — запись не сохранена.';
+      return;
+    }
+    const stamp = new Date().toLocaleString('ru-RU', {
+      day: '2-digit',
+      month: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+    });
+    const title = window.prompt('Название композиции', `Моя запись ${stamp}`);
+    if (title === null) {
+      takeMsg.textContent = 'Запись отменена.';
+      return;
+    }
+    const comp = hitsToComposition(hits, title, ctx.scale.id);
+    takeMsg.textContent =
+      comp && saveImported(ctx.store, comp)
+        ? `Сохранено: «${comp.title}». Она появилась в списке композиций.`
+        : 'Не удалось сохранить запись.';
+  }
+
   const inst = createInstrument(ctx.scale, (id) => {
     playTap(ctx, id);
     inst.flash(id, 'hit');
+    capture(id, performance.now());
   });
   const heard = h('p', { class: 'heard', role: 'status' });
   const debug = h('p', { class: 'hint debug' });
@@ -27,7 +87,10 @@ export function freeScreen(ctx: AppCtx): Screen {
       heard.textContent = 'Звук не распознан';
       return;
     }
-    for (const id of ev.tongues) inst.flash(id, 'good');
+    for (const id of ev.tongues) {
+      inst.flash(id, 'good');
+      capture(id, ev.timeMs);
+    }
     const notes = ev.tongues.map((id) => noteOf(ctx.scale, id)).join(' + ');
     heard.textContent = `${notes} · чистота ${clarityPercent(ev.clarity)}% · ${Math.round(ev.levelDb)} дБ`;
   });
@@ -44,6 +107,8 @@ export function freeScreen(ctx: AppCtx): Screen {
         ctx.mic
           .record(RECORD_SECONDS)
           .then((blob) => {
+            // Пользователь уже ушёл с экрана — не подсовываем скачивание на другом экране.
+            if (!alive) return;
             const url = URL.createObjectURL(blob);
             const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
             const link = h('a', { href: url, download: `rav-${stamp}.wav` });
@@ -79,11 +144,14 @@ export function freeScreen(ctx: AppCtx): Screen {
         ? 'Играйте на инструменте — распознанные поля подсвечиваются.'
         : 'Касайтесь полей или нажимайте клавиши с их номерами — 0 это центр.',
     ),
-    ctx.mic.enabled ? h('div', { class: 'row center' }, recordBtn) : '',
+    h('div', { class: 'row center' }, takeBtn, ctx.mic.enabled ? recordBtn : ''),
+    takeMsg,
   );
+  renderTake();
   return {
     el,
     destroy() {
+      alive = false;
       unsubscribe();
       meter.destroy();
       inst.destroy();

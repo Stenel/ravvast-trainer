@@ -55,55 +55,248 @@ const HANN = Float64Array.from({ length: WINDOW }, (_, i) =>
   0.5 - 0.5 * Math.cos((2 * Math.PI * i) / (WINDOW - 1)),
 );
 
-/** Быстрое преобразование Фурье на месте; длина — степень двойки. */
-export function fft(re: Float64Array, im: Float64Array): void {
-  const n = re.length;
+/**
+ * Заготовка БПФ для одной длины: перестановка индексов и поворотные множители.
+ * Множители этапа с половиной блока half лежат в cos/sin с позиции half − 1 и получены
+ * той же рекуррентой, что и раньше в цикле, — результат совпадает бит в бит.
+ */
+interface FftPlan {
+  n: number;
+  /** rev[i] — индекс i с обратным порядком бит. */
+  rev: Int32Array;
+  cos: Float64Array;
+  sin: Float64Array;
+}
+
+const fftPlans = new Map<number, FftPlan>();
+
+function fftPlan(n: number): FftPlan {
+  let plan = fftPlans.get(n);
+  if (plan) return plan;
+  const rev = new Int32Array(n);
   for (let i = 1, j = 0; i < n; i++) {
     let bit = n >> 1;
     for (; j & bit; bit >>= 1) j ^= bit;
     j ^= bit;
-    if (i < j) {
-      [re[i], re[j]] = [re[j], re[i]];
-      [im[i], im[j]] = [im[j], im[i]];
-    }
+    rev[i] = j;
   }
-  for (let len = 2; len <= n; len <<= 1) {
-    const ang = (-2 * Math.PI) / len;
+  const cos = new Float64Array(Math.max(0, n - 1));
+  const sin = new Float64Array(Math.max(0, n - 1));
+  for (let half = 1; half < n; half <<= 1) {
+    const ang = (-2 * Math.PI) / (half * 2);
     const wr = Math.cos(ang);
     const wi = Math.sin(ang);
+    let cr = 1;
+    let ci = 0;
+    for (let k = 0; k < half; k++) {
+      cos[half - 1 + k] = cr;
+      sin[half - 1 + k] = ci;
+      const ncr = cr * wr - ci * wi;
+      ci = cr * wi + ci * wr;
+      cr = ncr;
+    }
+  }
+  plan = { n, rev, cos, sin };
+  fftPlans.set(n, plan);
+  return plan;
+}
+
+const FLUX_PLAN = fftPlan(FLUX_WINDOW);
+
+/**
+ * Этапы «бабочек» над данными, уже переставленными в порядке plan.rev.
+ * Если задан maxBin, верны будут только линии спектра 0..maxBin: на последних этапах
+ * (половина блока больше maxBin) считаются лишь те значения, от которых они зависят, —
+ * теми же действиями, так что сами линии не меняются ни на бит.
+ */
+function butterflies(re: Float64Array, im: Float64Array, plan: FftPlan, maxBin = plan.n): void {
+  const { n, cos, sin } = plan;
+  let half = 1;
+  // Пока оба соседних этапа считаются целиком, они выполняются за один проход по данным:
+  // те же четыре «бабочки» на четвёрку значений, но вдвое меньше чтений и записей.
+  for (; half * 2 < n && half * 2 <= maxBin; half <<= 2) {
+    const len = half << 2;
+    const o1 = half - 1;
+    const o2 = 2 * half - 1;
     for (let i = 0; i < n; i += len) {
-      let cr = 1;
-      let ci = 0;
-      for (let k = 0; k < len / 2; k++) {
+      for (let k = 0; k < half; k++) {
+        const p0 = i + k;
+        const p1 = p0 + half;
+        const p2 = p1 + half;
+        const p3 = p2 + half;
+        // Этап half: пары (p0, p1) и (p2, p3).
+        const cr = cos[o1 + k];
+        const ci = sin[o1 + k];
+        let xr = re[p1];
+        let xi = im[p1];
+        let tr = xr * cr - xi * ci;
+        let ti = xr * ci + xi * cr;
+        let ar = re[p0];
+        let ai = im[p0];
+        const r0 = ar + tr;
+        const i0 = ai + ti;
+        const r1 = ar - tr;
+        const i1 = ai - ti;
+        xr = re[p3];
+        xi = im[p3];
+        tr = xr * cr - xi * ci;
+        ti = xr * ci + xi * cr;
+        ar = re[p2];
+        ai = im[p2];
+        const r2 = ar + tr;
+        const i2 = ai + ti;
+        const r3 = ar - tr;
+        const i3 = ai - ti;
+        // Этап 2·half: пары (p0, p2) и (p1, p3), у второй множитель сдвинут на half.
+        const dr = cos[o2 + k];
+        const di = sin[o2 + k];
+        tr = r2 * dr - i2 * di;
+        ti = r2 * di + i2 * dr;
+        re[p2] = r0 - tr;
+        im[p2] = i0 - ti;
+        re[p0] = r0 + tr;
+        im[p0] = i0 + ti;
+        const er = cos[o2 + half + k];
+        const ei = sin[o2 + half + k];
+        tr = r3 * er - i3 * ei;
+        ti = r3 * ei + i3 * er;
+        re[p3] = r1 - tr;
+        im[p3] = i1 - ti;
+        re[p1] = r1 + tr;
+        im[p1] = i1 + ti;
+      }
+    }
+  }
+  for (; half < n; half <<= 1) {
+    const len = half << 1;
+    const off = half - 1;
+    if (half > maxBin) {
+      // Нужны только первые maxBin + 1 значений каждого блока.
+      for (let i = 0; i < n; i += len) {
+        for (let k = 0; k <= maxBin; k++) {
+          const a = i + k;
+          const b = a + half;
+          const cr = cos[off + k];
+          const ci = sin[off + k];
+          const xr = re[b];
+          const xi = im[b];
+          re[a] += xr * cr - xi * ci;
+          im[a] += xr * ci + xi * cr;
+        }
+      }
+      continue;
+    }
+    for (let i = 0; i < n; i += len) {
+      for (let k = 0; k < half; k++) {
         const a = i + k;
-        const b = a + len / 2;
-        const tr = re[b] * cr - im[b] * ci;
-        const ti = re[b] * ci + im[b] * cr;
-        re[b] = re[a] - tr;
-        im[b] = im[a] - ti;
-        re[a] += tr;
-        im[a] += ti;
-        const ncr = cr * wr - ci * wi;
-        ci = cr * wi + ci * wr;
-        cr = ncr;
+        const b = a + half;
+        const cr = cos[off + k];
+        const ci = sin[off + k];
+        const xr = re[b];
+        const xi = im[b];
+        const tr = xr * cr - xi * ci;
+        const ti = xr * ci + xi * cr;
+        const ar = re[a];
+        const ai = im[a];
+        re[b] = ar - tr;
+        im[b] = ai - ti;
+        re[a] = ar + tr;
+        im[a] = ai + ti;
       }
     }
   }
 }
 
+/** Быстрое преобразование Фурье на месте; длина — степень двойки. */
+export function fft(re: Float64Array, im: Float64Array): void {
+  const plan = fftPlan(re.length);
+  const { n, rev } = plan;
+  for (let i = 1; i < n; i++) {
+    const j = rev[i];
+    if (i < j) {
+      const tr = re[i];
+      re[i] = re[j];
+      re[j] = tr;
+      const ti = im[i];
+      im[i] = im[j];
+      im[j] = ti;
+    }
+  }
+  butterflies(re, im, plan);
+}
+
 /** Мощность сигнала в логарифмических полосах 70–1700 Гц для окна из WINDOW сэмплов. */
 export function bandPowers(read: (i: number) => number, sampleRate: number): Float64Array {
-  const re = new Float64Array(FFT_SIZE);
-  const im = new Float64Array(FFT_SIZE);
-  for (let i = 0; i < WINDOW; i++) re[i] = read(i) * HANN[i];
-  fft(re, im);
-  const out = new Float64Array(BANDS);
+  const s = takeScratch();
+  const rev = BAND_PLAN.rev;
+  for (let i = 0; i < WINDOW; i++) s.re[rev[i]] = read(i) * HANN[i];
+  return finishBands(s, sampleRate);
+}
+
+/** То же для готового окна из WINDOW сэмплов — без вызова функции на каждый сэмпл. */
+function windowBandPowers(win: ArrayLike<number>, sampleRate: number): Float64Array {
+  const s = takeScratch();
+  const rev = BAND_PLAN.rev;
+  for (let i = 0; i < WINDOW; i++) s.re[rev[i]] = win[i] * HANN[i];
+  return finishBands(s, sampleRate);
+}
+
+const BAND_PLAN = fftPlan(FFT_SIZE);
+
+interface Scratch {
+  re: Float64Array;
+  im: Float64Array;
+}
+
+// Запас рабочих буферов БПФ. Буфер забирается на время расчёта, поэтому вложенный вызов
+// (например, из read) получит свой собственный и ничего не испортит.
+const scratchPool: Scratch[] = [];
+
+/** Обнулённая пара буферов длиной FFT_SIZE. */
+function takeScratch(): Scratch {
+  const s = scratchPool.pop();
+  if (!s) return { re: new Float64Array(FFT_SIZE), im: new Float64Array(FFT_SIZE) };
+  s.re.fill(0);
+  s.im.fill(0);
+  return s;
+}
+
+interface BandMap {
+  /** Первая учитываемая спектральная линия. */
+  first: number;
+  /** Номер полосы для линий first, first + 1, … */
+  band: Int16Array;
+}
+
+const bandMaps = new Map<number, BandMap>();
+
+function bandMap(sampleRate: number): BandMap {
+  let map = bandMaps.get(sampleRate);
+  if (map) return map;
   const df = sampleRate / FFT_SIZE;
-  for (let k = Math.ceil(F_MIN / df); k < FFT_SIZE / 2; k++) {
+  const first = Math.ceil(F_MIN / df);
+  const band: number[] = [];
+  for (let k = first; k < FFT_SIZE / 2; k++) {
     const f = k * df;
     if (f >= F_MAX) break;
-    out[Math.floor(Math.log(f / F_MIN) / LOG_STEP)] += re[k] * re[k] + im[k] * im[k];
+    band.push(Math.floor(Math.log(f / F_MIN) / LOG_STEP));
   }
+  map = { first, band: Int16Array.from(band) };
+  bandMaps.set(sampleRate, map);
+  return map;
+}
+
+/** Считает спектр окна, уже разложенного в s.re в порядке обратных бит, и возвращает буфер в запас. */
+function finishBands(s: Scratch, sampleRate: number): Float64Array {
+  const { re, im } = s;
+  const { first, band } = bandMap(sampleRate);
+  butterflies(re, im, BAND_PLAN, first + band.length - 1);
+  const out = new Float64Array(BANDS);
+  for (let j = 0; j < band.length; j++) {
+    const k = first + j;
+    out[band[j]] += re[k] * re[k] + im[k] * im[k];
+  }
+  scratchPool.push(s);
   return out;
 }
 
@@ -211,20 +404,36 @@ export class HitDetector {
   private written = 0;
   private hopStart = 0;
   private prevSample = 0;
-  private readonly hopE: number[] = [];
-  private readonly hopD: number[] = [];
-  private readonly histE: number[] = [];
-  private readonly histD: number[] = [];
+  // Кольца фиксированной длины: *Pos — место следующей записи, *Count — сколько заполнено.
+  private readonly hopE = new Float64Array(ENERGY_HOPS);
+  private readonly hopD = new Float64Array(ENERGY_HOPS);
+  private hopPos = 0;
+  private hopCount = 0;
+  private readonly histE = new Float64Array(HISTORY_HOPS);
+  private readonly histD = new Float64Array(HISTORY_HOPS);
+  private histPos = 0;
+  private histCount = 0;
   private readonly fluxRe = new Float64Array(FLUX_WINDOW);
   private readonly fluxIm = new Float64Array(FLUX_WINDOW);
-  private readonly fluxHist: Float32Array[] = [];
+  private readonly fluxLo: number;
+  private readonly fluxBins: number;
+  /** Кольцо последних FLUX_SPAN кадров спектра; fluxPos — самый старый (он же следующий на запись). */
+  private readonly fluxRing: Float32Array[] = [];
+  private fluxSpare: Float32Array;
+  private readonly fluxMax: Float32Array;
+  private fluxPos = 0;
+  private fluxCount = 0;
   private refractory = 0;
   private readonly noiseFactor: number;
-  private readonly bucketMin: number[] = [];
-  private readonly bucketMax: number[] = [];
+  private readonly bucketMin = new Float64Array(NOISE_BUCKETS);
+  private readonly bucketMax = new Float64Array(NOISE_BUCKETS);
+  private bucketPos = 0;
+  private bucketCount = 0;
   private curMin = Infinity;
   private curMax = 0;
   private bucketHops = 0;
+  private readonly win = new Float32Array(WINDOW);
+  private readonly top = new Float64Array(TONALITY_BANDS);
   private pending: Pending[] = [];
   private nextId = 1;
 
@@ -232,6 +441,12 @@ export class HitDetector {
     this.sr = opts.sampleRate;
     this.ratio = opts.ratio ?? 1.7;
     this.noiseFactor = opts.noiseFactor ?? 8;
+    const df = this.sr / FLUX_WINDOW;
+    this.fluxLo = Math.ceil(F_MIN / df);
+    this.fluxBins = Math.floor(FLUX_F_MAX / df) - this.fluxLo + 1;
+    for (let i = 0; i < FLUX_SPAN; i++) this.fluxRing.push(new Float32Array(this.fluxBins));
+    this.fluxSpare = new Float32Array(this.fluxBins);
+    this.fluxMax = new Float32Array(this.fluxBins);
     this.ids = Object.keys(opts.templates);
     this.templates = this.ids.map((id) => opts.templates[id]);
     for (let a = 0; a < this.ids.length; a++) {
@@ -255,37 +470,54 @@ export class HitDetector {
     return events;
   }
 
-  private at(frame: number): number {
-    return frame < 0 || frame >= this.written ? 0 : this.buf[frame & MASK];
-  }
-
   private processHop(): void {
+    const buf = this.buf;
     let e = 0;
     let d = 0;
+    let prev = this.prevSample;
     for (let f = this.hopStart; f < this.written; f++) {
-      const x = this.buf[f & MASK];
+      const x = buf[f & MASK];
+      const dx = x - prev;
       e += x * x;
-      d += (x - this.prevSample) ** 2;
-      this.prevSample = x;
+      d += dx * dx;
+      prev = x;
     }
-    this.hopE.push(e);
-    this.hopD.push(d);
-    if (this.hopE.length > ENERGY_HOPS) {
-      this.hopE.shift();
-      this.hopD.shift();
+    this.prevSample = prev;
+    const hopE = this.hopE;
+    const hopD = this.hopD;
+    hopE[this.hopPos] = e;
+    hopD[this.hopPos] = d;
+    this.hopPos = (this.hopPos + 1) % ENERGY_HOPS;
+    if (this.hopCount < ENERGY_HOPS) this.hopCount++;
+    // Складываем от самого старого шага к новому: порядок влияет на округление.
+    let sumE = 0;
+    let sumD = 0;
+    for (let j = this.hopCount; j > 0; j--) {
+      const idx = (this.hopPos - j + ENERGY_HOPS) % ENERGY_HOPS;
+      sumE += hopE[idx];
+      sumD += hopD[idx];
     }
-    const n = this.hopE.length * HOP;
-    const winE = this.hopE.reduce((a, b) => a + b, 0) / n;
-    const winD = this.hopD.reduce((a, b) => a + b, 0) / n;
+    const n = this.hopCount * HOP;
+    const winE = sumE / n;
+    const winD = sumD / n;
 
     const fluxHit = this.spectralFlux();
 
     const gate = this.updateGate(winE);
 
+    const histE = this.histE;
+    const histD = this.histD;
     if (this.refractory > 0) this.refractory--;
-    else if (this.histE.length >= ENERGY_HOPS && winE > gate) {
-      const maxE = Math.max(...this.histE);
-      const maxD = Math.max(...this.histD);
+    else if (this.histCount >= ENERGY_HOPS && winE > gate) {
+      // Как Math.max: NaN в истории даёт NaN (сравнения с ним ложны).
+      let maxE = -Infinity;
+      let maxD = -Infinity;
+      for (let j = 0; j < this.histCount; j++) {
+        const he = histE[j];
+        const hd = histD[j];
+        if (he > maxE || he !== he) maxE = he;
+        if (hd > maxD || hd !== hd) maxD = hd;
+      }
       const energyHit = winE > this.ratio * maxE || winD > this.ratio * 1.5 * maxD;
       if (energyHit || fluxHit) {
         this.pending.push({
@@ -297,39 +529,37 @@ export class HitDetector {
         this.refractory = REFRACTORY_HOPS;
       }
     }
-    this.histE.push(winE);
-    this.histD.push(winD);
-    if (this.histE.length > HISTORY_HOPS) {
-      this.histE.shift();
-      this.histD.shift();
-    }
+    histE[this.histPos] = winE;
+    histD[this.histPos] = winD;
+    this.histPos = (this.histPos + 1) % HISTORY_HOPS;
+    if (this.histCount < HISTORY_HOPS) this.histCount++;
   }
 
   /** Текущий уровень фонового шума (мощность), по минимуму за последние ~30 с. */
   get noiseEnergy(): number {
-    const m = Math.min(this.curMin, ...this.bucketMin);
+    let m = this.curMin;
+    for (let j = 0; j < this.bucketCount; j++) if (this.bucketMin[j] < m) m = this.bucketMin[j];
     return Number.isFinite(m) ? m : 0;
   }
 
   /** Обновляет оценку фона и возвращает порог энергии, ниже которого удары не ищутся. */
   private updateGate(winE: number): number {
-    if (this.histE.length >= ENERGY_HOPS) {
+    if (this.histCount >= ENERGY_HOPS) {
       if (winE < this.curMin) this.curMin = winE;
       if (winE > this.curMax) this.curMax = winE;
       if (++this.bucketHops >= NOISE_BUCKET_HOPS) {
-        this.bucketMin.push(this.curMin);
-        this.bucketMax.push(this.curMax);
-        if (this.bucketMin.length > NOISE_BUCKETS) {
-          this.bucketMin.shift();
-          this.bucketMax.shift();
-        }
+        this.bucketMin[this.bucketPos] = this.curMin;
+        this.bucketMax[this.bucketPos] = this.curMax;
+        this.bucketPos = (this.bucketPos + 1) % NOISE_BUCKETS;
+        if (this.bucketCount < NOISE_BUCKETS) this.bucketCount++;
         this.curMin = Infinity;
         this.curMax = 0;
         this.bucketHops = 0;
       }
     }
     const noise = this.noiseEnergy;
-    const peak = Math.max(this.curMax, ...this.bucketMax);
+    let peak = this.curMax;
+    for (let j = 0; j < this.bucketCount; j++) if (this.bucketMax[j] > peak) peak = this.bucketMax[j];
     // Во время плотной игры «минимум» — это ещё звучащие ноты, а не фон; тогда порог
     // ограничиваем долей от недавних громких ударов, чтобы не терять тихие ноты.
     const adaptive = Math.min(this.noiseFactor * noise, PEAK_FRACTION * peak);
@@ -341,45 +571,73 @@ export class HitDetector {
    * Сравнение с максимумом за этот промежуток не даёт срабатывать на биениях звучащих нот.
    */
   private spectralFlux(): boolean {
-    const re = this.fluxRe.fill(0);
+    const re = this.fluxRe;
     const im = this.fluxIm.fill(0);
+    const buf = this.buf;
+    const rev = FLUX_PLAN.rev;
     const start = this.written - FLUX_WINDOW;
-    for (let i = 0; i < FLUX_WINDOW; i++) re[i] = this.at(start + i) * FLUX_HANN[i];
-    fft(re, im);
-    const df = this.sr / FLUX_WINDOW;
-    const lo = Math.ceil(F_MIN / df);
-    const hi = Math.floor(FLUX_F_MAX / df);
-    const mags = new Float32Array(hi - lo + 1);
-    for (let k = lo; k <= hi; k++) mags[k - lo] = Math.hypot(re[k], im[k]);
+    // Окно сразу кладётся в порядке обратных бит — отдельная перестановка не нужна.
+    for (let i = 0; i < FLUX_WINDOW; i++) {
+      const f = start + i;
+      re[rev[i]] = f < 0 ? 0 : buf[f & MASK] * FLUX_HANN[i];
+    }
+    const lo = this.fluxLo;
+    const bins = this.fluxBins;
+    butterflies(re, im, FLUX_PLAN, lo + bins - 1);
+    const mags = this.fluxSpare;
+    for (let i = 0; i < bins; i++) mags[i] = Math.hypot(re[lo + i], im[lo + i]);
 
+    const ring = this.fluxRing;
     let hit = false;
-    if (this.fluxHist.length >= FLUX_SPAN) {
+    if (this.fluxCount >= FLUX_SPAN) {
+      // Максимум по полосам за FLUX_SPAN − FLUX_LAG + 1 самых старых кадров кольца.
+      const max = this.fluxMax.fill(0);
+      for (let j = 0; j <= FLUX_SPAN - FLUX_LAG; j++) {
+        const frame = ring[(this.fluxPos + j) % FLUX_SPAN];
+        for (let i = 0; i < bins; i++) if (frame[i] > max[i]) max[i] = frame[i];
+      }
       let flux = 0;
       let base = 0;
-      const ref = this.fluxHist.slice(0, FLUX_SPAN - FLUX_LAG + 1);
-      for (let i = 0; i < mags.length; i++) {
-        let m = 0;
-        for (const frame of ref) if (frame[i] > m) m = frame[i];
+      for (let i = 0; i < bins; i++) {
+        const m = max[i];
         base += m * m;
         if (mags[i] > m) flux += (mags[i] - m) ** 2;
       }
       hit = flux > FLUX_FLOOR && flux > (this.ratio - 1) * FLUX_GAIN * base;
-    }
-    this.fluxHist.push(mags);
-    if (this.fluxHist.length > FLUX_SPAN) this.fluxHist.shift();
+    } else this.fluxCount++;
+    // Новый кадр встаёт на место самого старого, а тот становится запасным буфером.
+    this.fluxSpare = ring[this.fluxPos];
+    ring[this.fluxPos] = mags;
+    this.fluxPos = (this.fluxPos + 1) % FLUX_SPAN;
     return hit;
   }
 
   private rms(from: number, to: number): number {
+    const buf = this.buf;
+    const written = this.written;
     let s = 0;
-    for (let f = from; f < to; f++) s += this.at(f) ** 2;
+    for (let f = from; f < to; f++) {
+      const x = f < 0 || f >= written ? 0 : buf[f & MASK];
+      s += x * x;
+    }
     return Math.sqrt(s / Math.max(1, to - from));
   }
 
+  /** Копирует WINDOW сэмплов с кадра start в общий буфер окна (за пределами записи — нули). */
+  private copyWindow(start: number): Float32Array {
+    const buf = this.buf;
+    const written = this.written;
+    const win = this.win;
+    for (let i = 0; i < WINDOW; i++) {
+      const f = start + i;
+      win[i] = f < 0 || f >= written ? 0 : buf[f & MASK];
+    }
+    return win;
+  }
+
   private classify(p: Pending): DetectorEvent | null {
-    const post = bandPowers((i) => this.at(p.frame + i), this.sr);
-    const preStart = p.frame - HOP - WINDOW;
-    const pre = bandPowers((i) => this.at(preStart + i), this.sr);
+    const post = windowBandPowers(this.copyWindow(p.frame), this.sr);
+    const pre = windowBandPowers(this.copyWindow(p.frame - HOP - WINDOW), this.sr);
     let total = 0;
     let fresh = 0;
     for (let i = 0; i < BANDS; i++) {
@@ -399,9 +657,19 @@ export class HitDetector {
     const second = scores.length > 1 ? Math.max(0, scores[1].similarity) : 0;
     // Шум размазан по всем полосам, нота сосредоточена в нескольких: шумоподобный звук
     // не считаем ударом, даже если он случайно похож на какой-то шаблон.
-    const sorted = Array.from(feature, (x) => x * x).sort((a, b) => b - a);
+    // Отбираем TONALITY_BANDS наибольших долей вставками (top упорядочен по убыванию)
+    // и складываем их в том же порядке, что и после полной сортировки.
+    const top = this.top.fill(-1);
+    for (let i = 0; i < BANDS; i++) {
+      const x = feature[i] * feature[i];
+      if (x > top[TONALITY_BANDS - 1]) {
+        let j = TONALITY_BANDS - 1;
+        for (; j > 0 && x > top[j - 1]; j--) top[j] = top[j - 1];
+        top[j] = x;
+      }
+    }
     let tonality = 0;
-    for (let i = 0; i < TONALITY_BANDS; i++) tonality += sorted[i];
+    for (let i = 0; i < TONALITY_BANDS; i++) tonality += top[i];
     const tonal = tonality >= MIN_TONALITY;
     const dominant =
       tonal &&
@@ -440,6 +708,7 @@ export class HitDetector {
   }
 
   private flush(events: DetectorEvent[]): void {
+    if (this.pending.length === 0) return;
     const sustainEnd = Math.round(0.3 * this.sr);
     for (const p of this.pending) {
       if (!p.classified && this.written >= p.frame + WINDOW) {

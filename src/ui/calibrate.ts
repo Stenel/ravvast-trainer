@@ -11,6 +11,8 @@ const CONFUSABLE = 0.92;
  * звучащему полю даёт искажённый «отпечаток», поэтому такие удары не принимаем.
  */
 const MIN_CLEAN_NOVELTY = 0.7;
+/** Ниже этого сходства с любым полем звук считается посторонним. */
+const MIN_ANY_SIMILARITY = 0.3;
 
 export function calibrateScreen(ctx: AppCtx): Screen {
   const tongues = ctx.scale.tongues;
@@ -70,6 +72,13 @@ export function calibrateScreen(ctx: AppCtx): Screen {
     if (ev.type !== 'hit') return;
     if (ev.timeMs - lastHit < MIN_GAP_MS) return;
     lastHit = ev.timeMs;
+    // Шум, хлопок или голос не похожи ни на одно поле даже отдалённо — в эталон их не берём.
+    if ((ev.scores[0]?.similarity ?? 0) < MIN_ANY_SIMILARITY) {
+      note = 'Это не похоже на удар по полю — попробуйте ещё раз.';
+      inst.flash(selected, 'wrong');
+      render();
+      return;
+    }
     if (ev.novelty < MIN_CLEAN_NOVELTY) {
       note = 'Поле ещё звучит — приглушите его ладонью и ударьте снова.';
       inst.flash(selected, 'wrong');

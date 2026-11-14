@@ -136,8 +136,30 @@ export function gameScreen(ctx: AppCtx, comp: Composition, difficulty: Difficult
     finishTimer = window.setTimeout(() => showResults(isRecord), 700);
   }
 
+  const beatSec = 60 / comp.bpm;
+  let countShown = 0;
+
   function frame(): void {
     const t = now();
+
+    // Обратный отсчёт по долям перед началом и пульс на каждую долю во время игры.
+    if (t < 0) {
+      const left = Math.ceil(-t / beatSec);
+      if (left !== countShown) {
+        countShown = left;
+        window.clearTimeout(judgeTimer);
+        judgeEl.className = 'judge count';
+        judgeEl.textContent = left <= 4 ? String(left) : 'Приготовьтесь…';
+      }
+    } else if (countShown !== 0) {
+      countShown = 0;
+      if (judgeEl.classList.contains('count')) {
+        judgeEl.className = 'judge';
+        judgeEl.textContent = '';
+      }
+    }
+    const phase = (((t / beatSec) % 1) + 1) % 1;
+    inst.el.style.setProperty('--pulse', ((1 - phase) ** 3).toFixed(2));
     const missed = session.update(ctx.mic.active ? t - MIC_GRACE : t);
     for (const i of missed) {
       removeRing(i);
@@ -287,6 +309,7 @@ export function gameScreen(ctx: AppCtx, comp: Composition, difficulty: Difficult
     overlayHost,
   );
 
+  inst.el.classList.add('pulsing');
   raf = requestAnimationFrame(frame);
 
   return {

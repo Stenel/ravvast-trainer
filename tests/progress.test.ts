@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { PASS_ACCURACY, loadProgress, markCompleted, recordGame } from '../src/core/progress';
+import {
+  PASS_ACCURACY,
+  bestAccuracy,
+  loadProgress,
+  markCompleted,
+  recordGame,
+  starsFor,
+} from '../src/core/progress';
 
 function memoryStore(initial: Record<string, string> = {}) {
   const data = { ...initial };
@@ -55,6 +62,17 @@ describe('progress', () => {
     expect(p.best['constructor']?.easy).toEqual({ score: 5, accuracy: 1 });
     expect(p.best.other).toBeUndefined();
     expect(recordGame(st, 'other', 'normal', 1, 0).isRecord).toBe(true);
+  });
+
+  it('звёзды считаются по лучшей точности на любой сложности', () => {
+    expect([0, 0.69, 0.7, 0.84, 0.85, 0.94, 0.95, 1].map(starsFor)).toEqual([0, 0, 1, 1, 2, 2, 3, 3]);
+    const st = memoryStore();
+    recordGame(st, 'a', 'easy', 100, 0.9);
+    recordGame(st, 'a', 'hard', 50, 0.6);
+    const p = loadProgress(st);
+    expect(bestAccuracy(p, 'a')).toBe(0.9);
+    expect(bestAccuracy(p, 'missing')).toBe(0);
+    expect(bestAccuracy(p, 'toString')).toBe(0);
   });
 
   it('markCompleted не дублирует записи', () => {

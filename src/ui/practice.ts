@@ -49,10 +49,17 @@ export function practiceScreen(ctx: AppCtx, comp: Composition): Screen {
     // Аккорд — один удар, микрофон надёжно различает в нём только одно поле:
     // если услышано любое поле текущего шага, засчитываем шаг целиком.
     const remaining = session.remaining;
-    const heard = ev.tongues.some((id) => remaining.includes(id))
-      ? [...new Set([...ev.tongues, ...remaining])]
-      : [...ev.tongues];
-    for (const id of heard) correct = press(id) || correct;
+    if (ev.tongues.some((id) => remaining.includes(id))) {
+      // Нажимаем только поля текущего шага и останавливаемся, как только шаг сменился:
+      // иначе один удар мог бы засчитаться ещё и в следующем шаге.
+      const stepIndex = session.index;
+      for (const id of remaining) {
+        correct = press(id) || correct;
+        if (session.index !== stepIndex || justCompleted) break;
+      }
+    } else {
+      for (const id of ev.tongues) press(id);
+    }
     if (correct) {
       lastMicHit = ev.id;
       if (!justCompleted) toast(`Чистота тона: ${clarityPercent(ev.clarity)}%`);
@@ -205,7 +212,17 @@ export function practiceScreen(ctx: AppCtx, comp: Composition): Screen {
       chip.classList.toggle('in-loop', loop !== null && i >= loop.from && i <= loop.to);
     });
     chips[session.index]?.scrollIntoView({ block: 'nearest', inline: 'center' });
-    inst.setTargets(wait ? session.remaining : (steps[session.index]?.tongues ?? []));
+    const targets = wait ? session.remaining : (steps[session.index]?.tongues ?? []);
+    inst.setTargets(targets);
+    // Подсказка следующего шага: рука успевает подготовиться.
+    const first = loop ? loop.from : 0;
+    const last = loop ? loop.to : steps.length - 1;
+    const nextIndex = session.index >= last ? first : session.index + 1;
+    inst.setNext(
+      nextIndex === session.index
+        ? []
+        : (steps[nextIndex]?.tongues ?? []).filter((t) => !targets.includes(t)),
+    );
     stepLabel.textContent = `Шаг ${session.index + 1} из ${steps.length}`;
     tempoLabel.textContent = `Темп: ${Math.round(tempo * 100)}% (${Math.round(comp.bpm * tempo)} уд/мин)`;
     playBtn.textContent = running ? '⏸ Пауза' : '▶ Пуск';

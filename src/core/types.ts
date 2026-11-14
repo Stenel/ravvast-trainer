@@ -34,6 +34,8 @@ export interface Composition {
   title: string;
   scale: string;
   bpm: number;
+  /** Сложность: 1 — простая, 3 — сложная. Необязательное поле. */
+  level?: 1 | 2 | 3;
   notes: CompositionNote[];
 }
 

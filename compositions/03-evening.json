@@ -3,6 +3,7 @@
   "title": "Вечерняя мелодия",
   "scale": "e-low-pygmy",
   "bpm": 90,
+  "level": 2,
   "notes": [
     { "tongue": "0", "beat": 0, "duration": 2 },
     { "tongue": "4", "beat": 0, "duration": 2 },

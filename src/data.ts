@@ -10,6 +10,8 @@ const compositionFiles = import.meta.glob('../compositions/*.json', {
 });
 
 const IMPORTED_KEY = 'ravvast-trainer:imported:v1';
+const MAX_STORED_CHARS = 2_000_000;
+export const MAX_IMPORTED = 100;
 
 /** localStorage, который не бросает исключений (приватный режим, переполнение). */
 export const safeStore: KeyValueStore = {
@@ -55,8 +57,11 @@ export function loadBuiltin(scale: Scale): Composition[] {
 
 function readImportedRaw(store: KeyValueStore): unknown[] {
   try {
-    const raw: unknown = JSON.parse(store.getItem(IMPORTED_KEY) ?? '[]');
-    return Array.isArray(raw) ? raw : [];
+    const text = store.getItem(IMPORTED_KEY) ?? '[]';
+    // Хранилище общее для всего адреса сайта: не разбираем подозрительно большие данные.
+    if (text.length > MAX_STORED_CHARS) return [];
+    const raw: unknown = JSON.parse(text);
+    return Array.isArray(raw) ? raw.slice(0, MAX_IMPORTED) : [];
   } catch {
     return [];
   }
@@ -70,8 +75,6 @@ export function loadImported(store: KeyValueStore, scale: Scale): Composition[] 
   }
   return out;
 }
-
-export const MAX_IMPORTED = 100;
 
 /** Возвращает false, если сохранить не удалось (хранилище недоступно, переполнено или достигнут лимит). */
 export function saveImported(store: KeyValueStore, comp: Composition): boolean {

@@ -3,6 +3,7 @@
   "title": "Amazing Grace (адаптация)",
   "scale": "e-low-pygmy",
   "bpm": 80,
+  "level": 2,
   "notes": [
     { "tongue": "8", "beat": 0, "duration": 1 },
     { "tongue": "5", "beat": 1, "duration": 2 },

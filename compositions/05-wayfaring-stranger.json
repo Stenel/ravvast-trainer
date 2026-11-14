@@ -3,6 +3,7 @@
   "title": "Wayfaring Stranger, куплет (адаптация)",
   "scale": "e-low-pygmy",
   "bpm": 72,
+  "level": 2,
   "notes": [
     { "tongue": "2", "beat": 0, "duration": 1 },
     { "tongue": "4", "beat": 1, "duration": 1 },

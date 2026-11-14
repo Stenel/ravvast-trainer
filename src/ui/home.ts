@@ -1,12 +1,14 @@
 import { parseCompositionJson } from '../core/composition';
 import { DIFFICULTIES, type Difficulty } from '../core/judge';
-import { loadProgress } from '../core/progress';
+import { type Progress, bestAccuracy, loadProgress, starsFor } from '../core/progress';
 import type { Composition } from '../core/types';
 import { loadBuiltin, loadImported, removeImported, saveImported } from '../data';
 import { type AppCtx, type Screen, h } from './dom';
+import { canInstall, onInstallChange, promptInstall } from './install';
 
 const DIFFICULTY_KEY = 'ravvast-trainer:difficulty';
 const MAX_FILE_BYTES = 1_000_000;
+const LEVELS = { 1: 'Просто', 2: 'Средне', 3: 'Сложно' } as const;
 
 const EXAMPLE = `{
   "title": "Моя мелодия",
@@ -26,6 +28,12 @@ function readDifficulty(ctx: AppCtx): Difficulty {
 export function homeScreen(ctx: AppCtx): Screen {
   let difficulty = readDifficulty(ctx);
   const list = h('div', { class: 'list' });
+  const levelRow = h('div', {
+    class: 'segmented four',
+    role: 'group',
+    'aria-label': 'Уровень композиций',
+  });
+  let levelFilter: 0 | 1 | 2 | 3 = 0;
   const message = h('div', { class: 'message', role: 'alert' });
   const diffRow = h('div', { class: 'segmented', role: 'group', 'aria-label': 'Сложность' });
 
@@ -37,7 +45,7 @@ export function homeScreen(ctx: AppCtx): Screen {
   const inputBox = h('div', { class: 'input-box' });
 
   const MIC_STATUS: Record<string, string> = {
-    off: 'Микрофон выключен — включится при запуске игры или по кнопке.',
+    off: 'Микрофон включится на экране игры, разучивания или калибровки.',
     starting: 'Включаю микрофон…',
     on: 'Микрофон слушает инструмент.',
     denied: 'Нет доступа к микрофону. Разрешите его для этого сайта в настройках браузера.',
@@ -51,6 +59,20 @@ export function homeScreen(ctx: AppCtx): Screen {
     stale: 'Калибровка снята на другом устройстве звука — повторите её.',
     none: 'Калибровка не выполнена: распознавание приблизительное.',
   };
+
+  let alive = true;
+  let accessOk = false;
+
+  /**
+   * Запрашивает доступ к микрофону (браузер покажет вопрос) и сразу отпускает его:
+   * на главном экране слушать незачем, микрофон включится на экране игры.
+   */
+  function checkAccess(): void {
+    void ctx.mic.start().then((ok) => {
+      accessOk = ok;
+      if (alive && ok) ctx.mic.stop();
+    });
+  }
 
   function renderInput(): void {
     const mic = ctx.mic;
@@ -71,7 +93,7 @@ export function homeScreen(ctx: AppCtx): Screen {
         seg('Микрофон', mic.enabled, () => {
           mic.setEnabled(true);
           renderInput();
-          void mic.start();
+          checkAccess();
         }),
       ),
     ];
@@ -101,19 +123,19 @@ export function homeScreen(ctx: AppCtx): Screen {
       );
       sens.value = mic.sensitivity;
       children.push(
-        h('p', { class: mic.status === 'on' ? 'meta ok-text' : 'meta' }, MIC_STATUS[mic.status]),
+        h(
+          'p',
+          { class: accessOk && mic.status === 'off' ? 'meta ok-text' : 'meta' },
+          accessOk && mic.status === 'off'
+            ? 'Доступ к микрофону есть. Он включится на экране игры, разучивания или калибровки.'
+            : MIC_STATUS[mic.status],
+        ),
         h('p', { class: 'meta' }, CALIBRATION[mic.calibration]),
         h(
           'div',
           { class: 'row' },
           h('button', { class: 'btn', type: 'button', onclick: ctx.calibrate }, 'Калибровка'),
-          mic.status === 'on'
-            ? ''
-            : h(
-                'button',
-                { class: 'btn', type: 'button', onclick: () => void mic.start() },
-                'Включить микрофон',
-              ),
+          h('button', { class: 'btn', type: 'button', onclick: checkAccess }, 'Проверить доступ'),
         ),
         h('label', { class: 'control' }, 'Задержка микрофона, мс', latency),
         h('label', { class: 'control' }, 'Чувствительность', sens),
@@ -127,6 +149,22 @@ export function homeScreen(ctx: AppCtx): Screen {
     inputBox.replaceChildren(...children);
   }
   const unsubStatus = ctx.mic.onStatus(renderInput);
+
+  const installBox = h('div', {});
+  function renderInstall(): void {
+    installBox.replaceChildren(
+      ...(canInstall()
+        ? [
+            h(
+              'button',
+              { class: 'btn wide-btn', type: 'button', onclick: () => void promptInstall() },
+              'Установить как приложение',
+            ),
+          ]
+        : []),
+    );
+  }
+  const unsubInstall = onInstallChange(renderInstall);
 
   function renderDifficulty(): void {
     diffRow.replaceChildren(
@@ -150,10 +188,10 @@ export function homeScreen(ctx: AppCtx): Screen {
     );
   }
 
-  function card(comp: Composition, imported: boolean): HTMLElement {
-    const progress = loadProgress(ctx.store);
+  function card(comp: Composition, imported: boolean, progress: Progress): HTMLElement {
     const best = progress.best[comp.id]?.[difficulty];
     const completed = progress.completed.includes(comp.id);
+    const stars = starsFor(bestAccuracy(progress, comp.id));
     return h(
       'article',
       { class: 'card' },
@@ -161,12 +199,27 @@ export function homeScreen(ctx: AppCtx): Screen {
         'div',
         { class: 'card-head' },
         h('h3', {}, comp.title),
-        completed ? h('span', { class: 'badge ok' }, '✓ Пройдено') : '',
+        stars > 0
+          ? h(
+              'span',
+              { class: 'badge stars', 'aria-label': `Звёзд: ${stars} из 3` },
+              '★'.repeat(stars) + '☆'.repeat(3 - stars),
+            )
+          : completed
+            ? h('span', { class: 'badge ok' }, '✓ Пройдено')
+            : '',
       ),
       h(
         'p',
         { class: 'meta' },
-        `${comp.bpm} уд/мин · нот: ${comp.notes.length}${imported ? ' · своя' : ''}`,
+        [
+          comp.level ? `${LEVELS[comp.level]}` : '',
+          `${comp.bpm} уд/мин`,
+          `нот: ${comp.notes.length}`,
+          imported ? 'своя' : '',
+        ]
+          .filter(Boolean)
+          .join(' · '),
       ),
       h(
         'p',
@@ -207,9 +260,32 @@ export function homeScreen(ctx: AppCtx): Screen {
   function renderList(): void {
     const builtin = loadBuiltin(ctx.scale);
     const imported = loadImported(ctx.store, ctx.scale);
+    const progress = loadProgress(ctx.store);
+    const fits = (c: Composition) => levelFilter === 0 || c.level === levelFilter;
+    const cards = [
+      ...builtin.filter(fits).map((c) => card(c, false, progress)),
+      // Свои композиции уровня не имеют — показываем их при любом фильтре.
+      ...imported.map((c) => card(c, true, progress)),
+    ];
     list.replaceChildren(
-      ...builtin.map((c) => card(c, false)),
-      ...imported.map((c) => card(c, true)),
+      ...(cards.length ? cards : [h('p', { class: 'meta' }, 'Нет композиций этого уровня.')]),
+    );
+    levelRow.replaceChildren(
+      ...([0, 1, 2, 3] as const).map((lv) =>
+        h(
+          'button',
+          {
+            type: 'button',
+            class: lv === levelFilter ? 'seg active' : 'seg',
+            'aria-pressed': String(lv === levelFilter),
+            onclick: () => {
+              levelFilter = lv;
+              renderList();
+            },
+          },
+          lv === 0 ? 'Все' : LEVELS[lv],
+        ),
+      ),
     );
   }
 
@@ -267,11 +343,13 @@ export function homeScreen(ctx: AppCtx): Screen {
       { class: 'btn wide-btn', type: 'button', onclick: ctx.free },
       'Свободная игра и проверка распознавания',
     ),
+    installBox,
     h('h2', {}, 'Чем играть'),
     inputBox,
     h('h2', {}, 'Сложность игры'),
     diffRow,
     h('h2', {}, 'Композиции'),
+    levelRow,
     list,
     h(
       'button',
@@ -294,8 +372,16 @@ export function homeScreen(ctx: AppCtx): Screen {
   );
 
   renderInput();
+  renderInstall();
   renderDifficulty();
   renderList();
 
-  return { el, destroy: unsubStatus };
+  return {
+    el,
+    destroy() {
+      alive = false;
+      unsubStatus();
+      unsubInstall();
+    },
+  };
 }

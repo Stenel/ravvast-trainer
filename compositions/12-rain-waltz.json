@@ -1,0 +1,26 @@
+{
+  "id": "builtin-rain-waltz",
+  "title": "Вальс дождя",
+  "scale": "e-low-pygmy",
+  "bpm": 80,
+  "level": 1,
+  "notes": [
+    { "tongue": "0", "beat": 0, "duration": 1 },
+    { "tongue": "4", "beat": 1, "duration": 1 },
+    { "tongue": "5", "beat": 2, "duration": 1 },
+    { "tongue": "6", "beat": 3, "duration": 3 },
+    { "tongue": "0", "beat": 6, "duration": 1 },
+    { "tongue": "4", "beat": 7, "duration": 1 },
+    { "tongue": "6", "beat": 8, "duration": 1 },
+    { "tongue": "7", "beat": 9, "duration": 3 },
+    { "tongue": "1", "beat": 12, "duration": 1 },
+    { "tongue": "6", "beat": 13, "duration": 1 },
+    { "tongue": "7", "beat": 14, "duration": 1 },
+    { "tongue": "8", "beat": 15, "duration": 3 },
+    { "tongue": "7", "beat": 18, "duration": 1 },
+    { "tongue": "6", "beat": 19, "duration": 1 },
+    { "tongue": "5", "beat": 20, "duration": 1 },
+    { "tongue": "4", "beat": 21, "duration": 3 },
+    { "tongue": "0", "beat": 24, "duration": 3 }
+  ]
+}

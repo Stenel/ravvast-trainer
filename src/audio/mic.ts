@@ -58,6 +58,8 @@ export function encodeWav(chunks: Float32Array[], sampleRate: number): Blob {
   return new Blob([view], { type: 'audio/wav' });
 }
 export const MAX_LATENCY_MS = 400;
+/** Через сколько времени в фоне микрофон отключается. */
+const HIDDEN_STOP_MS = 30_000;
 
 /** Микрофон: захват звука, распознавание ударов, настройки и калибровка. */
 export class MicInput {
@@ -78,8 +80,14 @@ export class MicInput {
   private frameOffset: number | null = null;
   private starting: Promise<boolean> | null = null;
   private gen = 0;
-  private recording: { chunks: Float32Array[]; left: number; done: (b: Blob) => void } | null =
-    null;
+  private hiddenTimer = 0;
+  private autoStopped = false;
+  private recording: {
+    chunks: Float32Array[];
+    left: number;
+    done: (b: Blob) => void;
+    fail: (e: Error) => void;
+  } | null = null;
   private readonly listeners = new Set<(ev: MicEvent) => void>();
   private readonly statusListeners = new Set<() => void>();
 
@@ -98,6 +106,23 @@ export class MicInput {
       // настройки по умолчанию
     }
     document.addEventListener('visibilitychange', () => {
+      // Приватность: если приложение долго в фоне, микрофон отключается сам и
+      // включается снова при возвращении.
+      window.clearTimeout(this.hiddenTimer);
+      if (document.hidden) {
+        if (this.status === 'on' || this.status === 'starting') {
+          this.hiddenTimer = window.setTimeout(() => {
+            this.autoStopped = true;
+            this.stop();
+          }, HIDDEN_STOP_MS);
+        }
+        return;
+      }
+      if (this.autoStopped) {
+        this.autoStopped = false;
+        if (this.enabled) void this.start();
+        return;
+      }
       // На iOS после звонка или сворачивания состояние бывает 'interrupted', а не 'suspended'.
       const state: string | undefined = this.ctx?.state;
       if (!document.hidden && state && state !== 'running' && state !== 'closed') {
@@ -319,17 +344,25 @@ export class MicInput {
   record(seconds: number): Promise<Blob> {
     if (!this.ctx || this.status !== 'on') return Promise.reject(new Error('Микрофон не включён'));
     if (this.recording) return Promise.reject(new Error('Запись уже идёт'));
-    return new Promise((done) => {
-      this.recording = { chunks: [], left: Math.round(seconds * this.ctx!.sampleRate), done };
+    return new Promise((done, fail) => {
+      this.recording = {
+        chunks: [],
+        left: Math.round(seconds * this.ctx!.sampleRate),
+        done,
+        fail,
+      };
     });
   }
 
   /** Запрашивает доступ и начинает слушать. Вызывать из обработчика нажатия. */
   start(): Promise<boolean> {
     if (this.status === 'on') return Promise.resolve(true);
-    this.starting ??= this.doStart().finally(() => {
-      this.starting = null;
-    });
+    if (!this.starting) {
+      const attempt: Promise<boolean> = this.doStart().finally(() => {
+        if (this.starting === attempt) this.starting = null;
+      });
+      this.starting = attempt;
+    }
     return this.starting;
   }
 
@@ -415,7 +448,12 @@ export class MicInput {
     this.ctx = null;
     this.detector = null;
     this.frameOffset = null;
+    // Незавершённая запись не должна «висеть»: сообщаем ожидающему об остановке.
+    this.recording?.fail(new Error('Микрофон остановлен'));
     this.recording = null;
+    // Старый запуск устарел (gen изменился): новый start() должен начать заново, а не
+    // получить его результат.
+    this.starting = null;
     if (this.status !== 'off') this.setStatus('off');
   }
 }

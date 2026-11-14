@@ -166,6 +166,11 @@ h3 {
   font-weight: 600;
 }
 
+.segmented.four {
+  grid-template-columns: repeat(4, 1fr);
+  margin-bottom: 10px;
+}
+
 .segmented.two {
   grid-template-columns: repeat(2, 1fr);
 }
@@ -290,6 +295,11 @@ select {
   white-space: nowrap;
 }
 
+.badge.stars {
+  color: var(--good);
+  letter-spacing: 0.1em;
+}
+
 .badge.ok {
   color: var(--perfect);
 }
@@ -379,6 +389,21 @@ select {
 .tongue-num {
   font-size: 11px;
   fill: var(--muted) !important;
+}
+
+.instrument.pulsing .body {
+  stroke: var(--accent);
+  stroke-opacity: calc(0.15 + 0.85 * var(--pulse, 0));
+}
+
+.tongue.next circle {
+  stroke: var(--accent);
+  stroke-dasharray: 6 5;
+  stroke-opacity: 0.8;
+}
+
+.judge.count {
+  font-size: 1.3rem;
 }
 
 .tongue.marked circle {

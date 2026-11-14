@@ -76,6 +76,15 @@ describe('parseComposition', () => {
     ).toBe(false);
   });
 
+  it('принимает необязательный уровень 1–3 и отклоняет другие значения', () => {
+    const ok = parseComposition({ ...valid, level: 2 }, scale);
+    expect(ok.ok && ok.value.level).toBe(2);
+    const none = parseComposition(valid, scale);
+    expect(none.ok && none.value.level).toBeUndefined();
+    expect(parseComposition({ ...valid, level: 5 }, scale).ok).toBe(false);
+    expect(parseComposition({ ...valid, level: '1' }, scale).ok).toBe(false);
+  });
+
   it('отклоняет несовпадение ноты и поля', () => {
     const r = parseComposition(
       { ...valid, notes: [{ tongue: '1', beat: 0, duration: 1, note: 'B2' }] },
@@ -127,8 +136,8 @@ describe('поставляемые примеры', () => {
   const ps = parseScale(pygmy);
   if (!ps.ok) throw new Error('scale');
 
-  it('в комплекте три упражнения и две адаптации песен', () => {
-    expect(Object.keys(files)).toHaveLength(5);
+  it('в комплекте восемнадцать композиций', () => {
+    expect(Object.keys(files)).toHaveLength(18);
   });
 
   for (const [path, raw] of Object.entries(files)) {

@@ -13,6 +13,8 @@ export interface Instrument {
   overlay: SVGGElement;
   flash(id: string, kind: FlashKind): void;
   setTargets(ids: readonly string[]): void;
+  /** Ненавязчивая подсказка: поля, которые понадобятся следующими. */
+  setNext(ids: readonly string[]): void;
   /** Постоянная пометка полей (например, уже откалиброванных). */
   setMarked(ids: readonly string[]): void;
   pos(id: string): { x: number; y: number; r: number };
@@ -108,6 +110,9 @@ export function createInstrument(scale: Scale, onHit: (id: string) => void): Ins
     },
     setTargets(ids) {
       for (const [id, g] of groups) g.classList.toggle('target', ids.includes(id));
+    },
+    setNext(ids) {
+      for (const [id, g] of groups) g.classList.toggle('next', ids.includes(id));
     },
     setMarked(ids) {
       for (const [id, g] of groups) g.classList.toggle('marked', ids.includes(id));

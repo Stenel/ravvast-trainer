@@ -22,6 +22,20 @@ export const PASS_ACCURACY = 0.7;
 
 const DIFFS: Difficulty[] = ['easy', 'normal', 'hard'];
 
+/** Звёзды за точность: 1 — пройдено (70%), 2 — 85%, 3 — 95%. */
+export function starsFor(accuracy: number): 0 | 1 | 2 | 3 {
+  if (accuracy >= 0.95) return 3;
+  if (accuracy >= 0.85) return 2;
+  if (accuracy >= PASS_ACCURACY) return 1;
+  return 0;
+}
+
+/** Лучшая точность по композиции на любой сложности (0, если не играли). */
+export function bestAccuracy(progress: Progress, compositionId: string): number {
+  const entry = Object.hasOwn(progress.best, compositionId) ? progress.best[compositionId] : {};
+  return Math.max(0, ...DIFFS.map((d) => entry[d]?.accuracy ?? 0));
+}
+
 export function loadProgress(store: KeyValueStore): Progress {
   // best без прототипа: id композиции приходит из импортированного файла и может быть "__proto__".
   const progress: Progress = { best: Object.create(null), completed: [] };

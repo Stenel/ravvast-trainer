@@ -3,6 +3,7 @@
   "title": "Гамма вверх и вниз",
   "scale": "e-low-pygmy",
   "bpm": 80,
+  "level": 1,
   "notes": [
     { "tongue": "0", "beat": 0, "duration": 1 },
     { "tongue": "1", "beat": 1, "duration": 1 },

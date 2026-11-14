@@ -27,6 +27,11 @@ export function parseComposition(raw: unknown, scale: Scale): Result<Composition
     errors.push(`Темп "bpm" должен быть числом от ${MIN_BPM} до ${MAX_BPM}.`);
   }
 
+  const level = raw.level;
+  if (level !== undefined && level !== 1 && level !== 2 && level !== 3) {
+    errors.push('Уровень "level" должен быть 1, 2 или 3.');
+  }
+
   const notes: CompositionNote[] = [];
   if (!Array.isArray(raw.notes) || raw.notes.length === 0) {
     errors.push('Список "notes" должен быть непустым массивом.');
@@ -69,8 +74,19 @@ export function parseComposition(raw: unknown, scale: Scale): Result<Composition
   if (errors.length) return { ok: false, errors };
 
   notes.sort((a, b) => a.beat - b.beat);
-  const id = typeof raw.id === 'string' && raw.id.trim() ? raw.id.trim() : `custom:${title}`;
-  return { ok: true, value: { id, title, scale: scale.id, bpm: bpm as number, notes } };
+  const id =
+    typeof raw.id === 'string' && raw.id.trim() ? raw.id.trim().slice(0, 140) : `custom:${title}`;
+  return {
+    ok: true,
+    value: {
+      id,
+      title,
+      scale: scale.id,
+      bpm: bpm as number,
+      ...(level ? { level: level as 1 | 2 | 3 } : {}),
+      notes,
+    },
+  };
 }
 
 export function parseCompositionJson(text: string, scale: Scale): Result<Composition> {
