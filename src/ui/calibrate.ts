@@ -1,9 +1,8 @@
-import { averageTemplates, cosine } from '../core/detector';
-import { type AppCtx, type Screen, h, topBar } from './dom';
+import { averageTemplates, cosine, defaultTemplates } from '../core/detector';
+import { type AppCtx, type Screen, h, levelMeter, topBar } from './dom';
 import { createInstrument } from './instrument';
 
 const HITS_PER_TONGUE = 3;
-const MIN_LEVEL_DB = -45;
 const MIN_GAP_MS = 350;
 /** Если шаблоны двух полей похожи сильнее — микрофон их плохо различает. */
 const CONFUSABLE = 0.92;
@@ -14,6 +13,8 @@ export function calibrateScreen(ctx: AppCtx): Screen {
   let collected: Float64Array[][] = tongues.map(() => []);
   let lastHit = 0;
   let finished = false;
+  let skipped: string[] = [];
+  const meter = levelMeter(ctx);
 
   const inst = createInstrument(ctx.scale, () => undefined);
   const status = h('p', { class: 'calib-status' });
@@ -23,8 +24,13 @@ export function calibrateScreen(ctx: AppCtx): Screen {
 
   function finish(): void {
     finished = true;
+    // Пропущенные поля распознаются по расчётным частотам.
+    const fallback = defaultTemplates(tongues, ctx.mic.sampleRate ?? 48000);
     const templates = Object.fromEntries(
-      tongues.map((t, i) => [t.id, averageTemplates(collected[i])]),
+      tongues.map((t, i) => [
+        t.id,
+        collected[i].length ? averageTemplates(collected[i]) : fallback[t.id],
+      ]),
     );
     const confusable: string[] = [];
     for (let a = 0; a < tongues.length; a++) {
@@ -38,6 +44,9 @@ export function calibrateScreen(ctx: AppCtx): Screen {
     result.className = `message ${saved ? 'ok' : 'error'}`;
     result.replaceChildren(
       h('div', {}, saved ? 'Калибровка сохранена.' : 'Не удалось сохранить калибровку.'),
+      ...(skipped.length
+        ? [h('div', {}, `Пропущены поля: ${skipped.join(', ')} — они распознаются приблизительно.`)]
+        : []),
       ...(confusable.length
         ? [
             h(
@@ -52,7 +61,7 @@ export function calibrateScreen(ctx: AppCtx): Screen {
   }
 
   const unsubscribe = ctx.mic.subscribe((ev) => {
-    if (finished || ev.type !== 'hit' || ev.levelDb < MIN_LEVEL_DB) return;
+    if (finished || ev.type !== 'hit') return;
     if (ev.timeMs - lastHit < MIN_GAP_MS) return;
     lastHit = ev.timeMs;
     collected[index].push(ev.feature);
@@ -69,6 +78,7 @@ export function calibrateScreen(ctx: AppCtx): Screen {
   const unsubStatus = ctx.mic.onStatus(render);
 
   function restart(): void {
+    skipped = [];
     index = 0;
     collected = tongues.map(() => []);
     finished = false;
@@ -123,6 +133,21 @@ export function calibrateScreen(ctx: AppCtx): Screen {
       h(
         'button',
         {
+          class: 'btn',
+          type: 'button',
+          onclick: () => {
+            collected[index] = [];
+            skipped.push(tongues[index].note);
+            index++;
+            if (index >= tongues.length) finish();
+            else render();
+          },
+        },
+        'Пропустить поле',
+      ),
+      h(
+        'button',
+        {
           class: 'btn ghost',
           type: 'button',
           onclick: () => {
@@ -142,6 +167,7 @@ export function calibrateScreen(ctx: AppCtx): Screen {
     { class: 'screen' },
     topBar('Калибровка', ctx.home),
     status,
+    meter.el,
     h('div', { class: 'stage' }, inst.el as unknown as Node),
     detail,
     actions,
@@ -154,6 +180,7 @@ export function calibrateScreen(ctx: AppCtx): Screen {
     destroy() {
       unsubscribe();
       unsubStatus();
+      meter.destroy();
       inst.destroy();
     },
   };

@@ -1,5 +1,5 @@
 import { MUTED_RATIO, clarityPercent } from '../core/quality';
-import { type AppCtx, type Screen, h, noteOf, playTap, topBar } from './dom';
+import { type AppCtx, type Screen, h, levelMeter, noteOf, playTap, topBar } from './dom';
 import { createInstrument } from './instrument';
 
 export function freeScreen(ctx: AppCtx): Screen {
@@ -8,6 +8,7 @@ export function freeScreen(ctx: AppCtx): Screen {
     inst.flash(id, 'hit');
   });
   const heard = h('p', { class: 'heard', role: 'status' });
+  const meter = levelMeter(ctx);
   let lastId = -1;
 
   const unsubscribe = ctx.mic.subscribe((ev) => {
@@ -30,6 +31,7 @@ export function freeScreen(ctx: AppCtx): Screen {
     { class: 'screen' },
     topBar('Свободная игра', ctx.home),
     heard,
+    meter.el,
     h('div', { class: 'stage' }, inst.el as unknown as Node),
     h(
       'p',
@@ -43,6 +45,7 @@ export function freeScreen(ctx: AppCtx): Screen {
     el,
     destroy() {
       unsubscribe();
+      meter.destroy();
       inst.destroy();
     },
   };

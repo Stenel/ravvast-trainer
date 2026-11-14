@@ -58,6 +58,24 @@ export function playTap(ctx: AppCtx, tongueId: string, velocity = 1): void {
   if (!ctx.mic.active) ctx.synth.play(freqOf(ctx.scale, tongueId), velocity);
 }
 
+/** Индикатор уровня микрофона: показывает, что вообще слышит устройство. */
+export function levelMeter(ctx: AppCtx): { el: HTMLElement; destroy(): void } {
+  const fill = h('div', { class: 'meter-fill' });
+  const label = h('span', { class: 'meter-label' });
+  const el = h('div', { class: 'meter', 'aria-hidden': 'true' }, h('div', { class: 'meter-bar' }, fill), label);
+  const timer = window.setInterval(() => {
+    const on = ctx.mic.status === 'on';
+    el.hidden = !on;
+    if (!on) return;
+    const db = ctx.mic.levelDb;
+    // −80 дБ — пустая шкала, −10 дБ — полная.
+    fill.style.width = `${Math.min(100, Math.max(0, ((db + 80) / 70) * 100)).toFixed(0)}%`;
+    label.textContent = `${Math.round(db)} дБ`;
+  }, 120);
+  el.hidden = true;
+  return { el, destroy: () => window.clearInterval(timer) };
+}
+
 export function freqOf(scale: Scale, tongueId: string): number {
   return scale.tongues.find((t) => t.id === tongueId)?.freq ?? 0;
 }

@@ -26,13 +26,15 @@ const FLUX_WINDOW = 2048;
 const FLUX_LAG = 8; // сравниваем с кадрами 43–128 мс назад
 const FLUX_SPAN = 24;
 const FLUX_F_MAX = 3000;
-const FLUX_FLOOR = 4;
+const FLUX_FLOOR = 0.17;
 /** На сколько сэмплов спектральный путь запаздывает относительно реального удара. */
 const FLUX_BIAS = 512;
 const FLUX_HANN = Float64Array.from({ length: FLUX_WINDOW }, (_, i) =>
   0.5 - 0.5 * Math.cos((2 * Math.PI * i) / (FLUX_WINDOW - 1)),
 );
-const ENERGY_FLOOR = 0.004 ** 2;
+// Порог тишины низкий: микрофоны телефонов почти не слышат основной тон низких полей
+// (E2 = 82 Гц), до распознавателя доходят только слабые обертоны.
+const ENERGY_FLOOR = 0.0008 ** 2;
 const BUFFER = 1 << 17;
 const MASK = BUFFER - 1;
 

@@ -207,6 +207,40 @@ select {
   margin: 8px 0 0;
 }
 
+.meter {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 6px auto 0;
+  width: min(100%, 320px);
+  color: var(--muted);
+  font-size: 0.8rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.meter[hidden] {
+  display: none;
+}
+
+.meter-bar {
+  flex: 1;
+  height: 6px;
+  background: var(--panel);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.meter-fill {
+  height: 100%;
+  width: 0;
+  background: var(--perfect);
+}
+
+.meter-label {
+  min-width: 52px;
+  text-align: right;
+}
+
 .sub {
   font-size: 0.85rem;
   color: var(--muted);

@@ -88,6 +88,11 @@ describe.each([44100, 48000])('HitDetector при %i Гц', (sr) => {
     hits.forEach((h, i) => expect(Math.abs(h.frame / sr - strikes[i].t)).toBeLessThan(0.025));
   });
 
+  it('слышит очень тихий удар (обертоны низкого поля в микрофоне телефона)', () => {
+    const hits = known(run(detector(sr), mix(sr, 0.9, [{ id: '0', t: 0.2, amp: 0.006 }], 0.0002)));
+    expect(hits.map((h) => h.tongues)).toEqual([['0']]);
+  });
+
   it('повторный удар по тому же полю засчитывается отдельно', () => {
     const hits = known(
       run(

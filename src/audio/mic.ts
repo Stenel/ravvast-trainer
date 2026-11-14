@@ -32,6 +32,12 @@ export class MicInput {
   enabled = false;
   latencyMs = 40;
   sensitivity: Sensitivity = 'normal';
+  /** Текущий уровень входного сигнала, дБ относительно максимума (−120 — тишина). */
+  levelDb = -120;
+
+  get sampleRate(): number | null {
+    return this.ctx?.sampleRate ?? null;
+  }
 
   private ctx: AudioContext | null = null;
   private stream: MediaStream | null = null;
@@ -201,6 +207,9 @@ export class MicInput {
 
   private onSamples(samples: Float32Array, frame: number): void {
     if (!this.detector || !this.enabled) return;
+    let sum = 0;
+    for (let i = 0; i < samples.length; i++) sum += samples[i] * samples[i];
+    this.levelDb = 10 * Math.log10(sum / Math.max(1, samples.length) + 1e-12);
     this.frameOffset ??= frame;
     const offset = this.frameOffset;
     let events: DetectorEvent[];
