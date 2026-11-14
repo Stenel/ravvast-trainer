@@ -31,6 +31,9 @@ try {
     play: (comp, difficulty) => show(gameScreen(ctx, comp, difficulty)),
     practice: (comp) => show(practiceScreen(ctx, comp)),
   };
+  for (const type of ['pointerup', 'touchend', 'click', 'keydown']) {
+    document.addEventListener(type, () => ctx.synth.unlock(), { passive: true });
+  }
   ctx.home();
 } catch (err) {
   const p = document.createElement('p');

@@ -23,7 +23,8 @@ export const PASS_ACCURACY = 0.7;
 const DIFFS: Difficulty[] = ['easy', 'normal', 'hard'];
 
 export function loadProgress(store: KeyValueStore): Progress {
-  const progress: Progress = { best: {}, completed: [] };
+  // best без прототипа: id композиции приходит из импортированного файла и может быть "__proto__".
+  const progress: Progress = { best: Object.create(null), completed: [] };
   let raw: unknown;
   try {
     raw = JSON.parse(store.getItem(PROGRESS_KEY) ?? 'null');
@@ -38,8 +39,13 @@ export function loadProgress(store: KeyValueStore): Progress {
       const clean: Partial<Record<Difficulty, BestResult>> = {};
       for (const d of DIFFS) {
         const r = entry[d];
-        if (isRecord(r) && typeof r.score === 'number' && typeof r.accuracy === 'number') {
-          clean[d] = { score: r.score, accuracy: r.accuracy };
+        if (
+          Object.hasOwn(entry, d) &&
+          isRecord(r) &&
+          typeof r.score === 'number' &&
+          typeof r.accuracy === 'number'
+        ) {
+          clean[d] = { score: r.score, accuracy: Math.min(1, Math.max(0, r.accuracy)) };
         }
       }
       progress.best[id] = clean;

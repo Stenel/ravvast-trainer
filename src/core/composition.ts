@@ -4,6 +4,8 @@ import type { Composition, CompositionNote, Result, Scale, TimedNote } from './t
 export const MIN_BPM = 20;
 export const MAX_BPM = 300;
 export const MAX_NOTES = 5000;
+export const MAX_BEAT = 20000;
+export const MAX_DURATION = 64;
 const MAX_ERRORS = 10;
 
 const isNum = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
@@ -52,12 +54,12 @@ export function parseComposition(raw: unknown, scale: Scale): Result<Composition
         );
         return;
       }
-      if (!isNum(n.beat) || n.beat < 0) {
-        errors.push(`${where}: "beat" должен быть числом не меньше 0.`);
+      if (!isNum(n.beat) || n.beat < 0 || n.beat > MAX_BEAT) {
+        errors.push(`${where}: "beat" должен быть числом от 0 до ${MAX_BEAT}.`);
         return;
       }
-      if (!isNum(n.duration) || n.duration <= 0) {
-        errors.push(`${where}: "duration" должна быть числом больше 0.`);
+      if (!isNum(n.duration) || n.duration <= 0 || n.duration > MAX_DURATION) {
+        errors.push(`${where}: "duration" должна быть числом больше 0 и не больше ${MAX_DURATION}.`);
         return;
       }
       notes.push({ tongue: tongueId, beat: n.beat, duration: n.duration });

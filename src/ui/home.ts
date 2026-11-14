@@ -147,7 +147,13 @@ export function homeScreen(ctx: AppCtx): Screen {
       const comp = builtinIds.has(r.value.id)
         ? { ...r.value, id: `custom:${r.value.id}` }
         : r.value;
-      saveImported(ctx.store, comp);
+      if (!saveImported(ctx.store, comp)) {
+        showMessage(
+          ['Не удалось сохранить композицию: хранилище браузера недоступно или заполнено.'],
+          'error',
+        );
+        return;
+      }
       showMessage([`Композиция «${comp.title}» добавлена.`], 'ok');
       renderList();
     },

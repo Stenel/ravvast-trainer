@@ -67,6 +67,15 @@ describe('parseComposition', () => {
     ).toBe(false);
   });
 
+  it('отклоняет слишком большие время и длительность', () => {
+    expect(
+      parseComposition({ ...valid, notes: [{ tongue: '1', beat: 1e7, duration: 1 }] }, scale).ok,
+    ).toBe(false);
+    expect(
+      parseComposition({ ...valid, notes: [{ tongue: '1', beat: 0, duration: 1e7 }] }, scale).ok,
+    ).toBe(false);
+  });
+
   it('отклоняет несовпадение ноты и поля', () => {
     const r = parseComposition(
       { ...valid, notes: [{ tongue: '1', beat: 0, duration: 1, note: 'B2' }] },

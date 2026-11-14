@@ -71,9 +71,15 @@ export function loadImported(store: KeyValueStore, scale: Scale): Composition[] 
   return out;
 }
 
-export function saveImported(store: KeyValueStore, comp: Composition): void {
+export const MAX_IMPORTED = 100;
+
+/** Возвращает false, если сохранить не удалось (хранилище недоступно, переполнено или достигнут лимит). */
+export function saveImported(store: KeyValueStore, comp: Composition): boolean {
   const rest = readImportedRaw(store).filter((c) => (c as { id?: unknown })?.id !== comp.id);
-  store.setItem(IMPORTED_KEY, JSON.stringify([...rest, comp]));
+  if (rest.length >= MAX_IMPORTED) return false;
+  const json = JSON.stringify([...rest, comp]);
+  store.setItem(IMPORTED_KEY, json);
+  return store.getItem(IMPORTED_KEY) === json;
 }
 
 export function removeImported(store: KeyValueStore, id: string): void {

@@ -45,6 +45,18 @@ describe('progress', () => {
     expect(loadProgress(st).completed).toEqual(['a']);
   });
 
+  it('id вроде "__proto__" не портит прототип и чужие результаты', () => {
+    const st = memoryStore();
+    recordGame(st, '__proto__', 'normal', 900, 1);
+    recordGame(st, 'constructor', 'easy', 5, 1);
+    expect(({} as Record<string, unknown>).normal).toBeUndefined();
+    const p = loadProgress(st);
+    expect(p.best['__proto__'].normal).toEqual({ score: 900, accuracy: 1 });
+    expect(p.best['constructor']?.easy).toEqual({ score: 5, accuracy: 1 });
+    expect(p.best.other).toBeUndefined();
+    expect(recordGame(st, 'other', 'normal', 1, 0).isRecord).toBe(true);
+  });
+
   it('markCompleted не дублирует записи', () => {
     const st = memoryStore();
     markCompleted(st, 'a');

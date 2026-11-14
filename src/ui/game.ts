@@ -71,7 +71,9 @@ export function gameScreen(ctx: AppCtx, comp: Composition, difficulty: Difficult
     if (done || !session.finished) return;
     done = true;
     cancelAnimationFrame(raf);
-    finishTimer = window.setTimeout(showResults, 700);
+    // Результат сохраняем сразу, чтобы он не пропал при быстром выходе с экрана.
+    const { isRecord } = recordGame(ctx.store, comp.id, difficulty, session.score, session.accuracy);
+    finishTimer = window.setTimeout(() => showResults(isRecord), 700);
   }
 
   function frame(): void {
@@ -127,8 +129,7 @@ export function gameScreen(ctx: AppCtx, comp: Composition, difficulty: Difficult
 
   const overlayHost = h('div', {});
 
-  function showResults(): void {
-    const { isRecord } = recordGame(ctx.store, comp.id, difficulty, session.score, session.accuracy);
+  function showResults(isRecord: boolean): void {
     const pct = Math.round(session.accuracy * 100);
     const passed = session.accuracy >= PASS_ACCURACY;
     const row = (label: string, value: string) =>

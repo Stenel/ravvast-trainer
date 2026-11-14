@@ -9,7 +9,14 @@ export class Synth {
   private ctx: AudioContext | null = null;
   private master: GainNode | null = null;
 
-  /** Создаёт аудиоконтекст. Вызывать из обработчика жеста пользователя. */
+  /**
+   * Разблокирует звук. Вызывается на любой клик/отпускание пальца: касание (pointerdown)
+   * на сенсорных экранах само не считается жестом, разрешающим звук.
+   */
+  unlock(): void {
+    this.ensure();
+  }
+
   private ensure(): AudioContext | null {
     if (!this.ctx) {
       const Ctor = window.AudioContext;

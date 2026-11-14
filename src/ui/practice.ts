@@ -60,6 +60,7 @@ export function practiceScreen(ctx: AppCtx, comp: Composition): Screen {
     'aria-label': 'Темп',
     oninput: () => {
       tempo = Number(tempoInput.value) / 100;
+      if (running) armTimer();
       render();
     },
   });
@@ -102,6 +103,7 @@ export function practiceScreen(ctx: AppCtx, comp: Composition): Screen {
   );
 
   function applyLoop(): void {
+    const before = session.index;
     if (loopInput.checked) {
       session.setLoop((Number(fromInput.value) || 1) - 1, (Number(toInput.value) || 1) - 1);
       const loop = session.loop;
@@ -112,7 +114,7 @@ export function practiceScreen(ctx: AppCtx, comp: Composition): Screen {
     } else {
       session.clearLoop();
     }
-    if (running) scheduleStep();
+    if (running && session.index !== before) scheduleStep();
     render();
   }
 
@@ -124,14 +126,9 @@ export function practiceScreen(ctx: AppCtx, comp: Composition): Screen {
   }
 
   // --- режим без ожидания: композиция идёт сама в выбранном темпе ---
-  function scheduleStep(): void {
+  /** Перезапускает ожидание текущего шага, не проигрывая его заново. */
+  function armTimer(): void {
     window.clearTimeout(timer);
-    const step = steps[session.index];
-    for (const t of step.tongues) {
-      ctx.synth.play(freqOf(ctx.scale, t), 0.8);
-      inst.flash(t, 'good');
-    }
-    render();
     timer = window.setTimeout(
       () => {
         const r = session.advance();
@@ -142,8 +139,17 @@ export function practiceScreen(ctx: AppCtx, comp: Composition): Screen {
         }
         scheduleStep();
       },
-      stepSeconds(step, comp.bpm, tempo) * 1000,
+      stepSeconds(steps[session.index], comp.bpm, tempo) * 1000,
     );
+  }
+
+  function scheduleStep(): void {
+    for (const t of steps[session.index].tongues) {
+      ctx.synth.play(freqOf(ctx.scale, t), 0.8);
+      inst.flash(t, 'good');
+    }
+    render();
+    armTimer();
   }
 
   function stop(): void {
