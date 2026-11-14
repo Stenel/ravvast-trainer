@@ -1,0 +1,24 @@
+{
+  "id": "builtin-evening",
+  "title": "Вечерняя мелодия",
+  "scale": "e-low-pygmy",
+  "bpm": 90,
+  "notes": [
+    { "tongue": "0", "beat": 0, "duration": 2 },
+    { "tongue": "4", "beat": 0, "duration": 2 },
+    { "tongue": "5", "beat": 2, "duration": 1 },
+    { "tongue": "6", "beat": 3, "duration": 1 },
+    { "tongue": "7", "beat": 4, "duration": 1.5 },
+    { "tongue": "6", "beat": 5.5, "duration": 0.5 },
+    { "tongue": "5", "beat": 6, "duration": 2 },
+    { "tongue": "1", "beat": 8, "duration": 2 },
+    { "tongue": "4", "beat": 10, "duration": 1 },
+    { "tongue": "5", "beat": 11, "duration": 1 },
+    { "tongue": "6", "beat": 12, "duration": 1 },
+    { "tongue": "5", "beat": 13, "duration": 0.5 },
+    { "tongue": "4", "beat": 13.5, "duration": 0.5 },
+    { "tongue": "3", "beat": 14, "duration": 2 },
+    { "tongue": "0", "beat": 16, "duration": 4 },
+    { "tongue": "4", "beat": 16, "duration": 4 }
+  ]
+}

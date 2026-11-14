@@ -1,0 +1,15 @@
+{
+  "id": "e-low-pygmy",
+  "name": "E Low Pygmy",
+  "tongues": [
+    { "id": "0", "note": "E2", "position": "center" },
+    { "id": "1", "note": "A2", "angle": 202.5 },
+    { "id": "2", "note": "B2", "angle": 157.5 },
+    { "id": "3", "note": "C3", "angle": 247.5 },
+    { "id": "4", "note": "E3", "angle": 112.5 },
+    { "id": "5", "note": "G3", "angle": 292.5 },
+    { "id": "6", "note": "A3", "angle": 67.5 },
+    { "id": "7", "note": "B3", "angle": 337.5 },
+    { "id": "8", "note": "D4", "angle": 22.5 }
+  ]
+}

@@ -1,0 +1,25 @@
+{
+  "id": "builtin-scale",
+  "title": "Гамма вверх и вниз",
+  "scale": "e-low-pygmy",
+  "bpm": 80,
+  "notes": [
+    { "tongue": "0", "beat": 0, "duration": 1 },
+    { "tongue": "1", "beat": 1, "duration": 1 },
+    { "tongue": "2", "beat": 2, "duration": 1 },
+    { "tongue": "3", "beat": 3, "duration": 1 },
+    { "tongue": "4", "beat": 4, "duration": 1 },
+    { "tongue": "5", "beat": 5, "duration": 1 },
+    { "tongue": "6", "beat": 6, "duration": 1 },
+    { "tongue": "7", "beat": 7, "duration": 1 },
+    { "tongue": "8", "beat": 8, "duration": 1 },
+    { "tongue": "7", "beat": 9, "duration": 1 },
+    { "tongue": "6", "beat": 10, "duration": 1 },
+    { "tongue": "5", "beat": 11, "duration": 1 },
+    { "tongue": "4", "beat": 12, "duration": 1 },
+    { "tongue": "3", "beat": 13, "duration": 1 },
+    { "tongue": "2", "beat": 14, "duration": 1 },
+    { "tongue": "1", "beat": 15, "duration": 1 },
+    { "tongue": "0", "beat": 16, "duration": 2 }
+  ]
+}

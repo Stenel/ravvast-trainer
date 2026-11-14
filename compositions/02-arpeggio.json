@@ -1,0 +1,25 @@
+{
+  "id": "builtin-arpeggio",
+  "title": "Перебор с басом",
+  "scale": "e-low-pygmy",
+  "bpm": 96,
+  "notes": [
+    { "tongue": "0", "beat": 0, "duration": 1 },
+    { "tongue": "4", "beat": 1, "duration": 1 },
+    { "tongue": "5", "beat": 2, "duration": 1 },
+    { "tongue": "6", "beat": 3, "duration": 1 },
+    { "tongue": "0", "beat": 4, "duration": 1 },
+    { "tongue": "4", "beat": 5, "duration": 1 },
+    { "tongue": "5", "beat": 6, "duration": 1 },
+    { "tongue": "7", "beat": 7, "duration": 1 },
+    { "tongue": "0", "beat": 8, "duration": 1 },
+    { "tongue": "3", "beat": 9, "duration": 1 },
+    { "tongue": "5", "beat": 10, "duration": 1 },
+    { "tongue": "6", "beat": 11, "duration": 1 },
+    { "tongue": "0", "beat": 12, "duration": 1 },
+    { "tongue": "4", "beat": 13, "duration": 1 },
+    { "tongue": "5", "beat": 14, "duration": 1 },
+    { "tongue": "4", "beat": 15, "duration": 1 },
+    { "tongue": "0", "beat": 16, "duration": 4 }
+  ]
+}
