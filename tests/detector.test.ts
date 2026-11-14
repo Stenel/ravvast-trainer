@@ -93,6 +93,20 @@ describe.each([44100, 48000])('HitDetector при %i Гц', (sr) => {
     expect(hits.map((h) => h.tongues)).toEqual([['0']]);
   });
 
+  it('плотная игра при очень долгом сустейне (ноты звучат ~10 с)', () => {
+    const order = ['0', '4', '4', '7', '7', '6', '7', '8', '7', '5', '1', '3', '2', '6', '4'];
+    const strikes = order.map((id, i) => ({ id, t: 0.2 + i * 0.4, decayScale: 3 }));
+    const events = run(detector(sr), mix(sr, 0.2 + order.length * 0.4 + 0.5, strikes));
+    expect(known(events).map((h) => h.tongues.join('+'))).toEqual(order);
+  });
+
+  it('сообщает новизну и ближайшие поля', () => {
+    const [hit] = known(run(detector(sr), mix(sr, 0.9, [{ id: '6', t: 0.2 }])));
+    expect(hit.novelty).toBeGreaterThan(0.9);
+    expect(hit.scores[0].id).toBe('6');
+    expect(hit.scores).toHaveLength(3);
+  });
+
   it('повторный удар по тому же полю засчитывается отдельно', () => {
     const hits = known(
       run(

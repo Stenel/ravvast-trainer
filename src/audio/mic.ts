@@ -19,6 +19,8 @@ export type MicEvent =
       clarity: number;
       levelDb: number;
       feature: Float64Array;
+      novelty: number;
+      scores: { id: string; similarity: number }[];
     }
   | { type: 'sustain'; id: number; ratio: number };
 
@@ -128,7 +130,11 @@ export class MicInput {
   }
 
   /** Сохранённая калибровка: шаблоны по всем полям строя или null. */
-  private loadCalibration(): { sampleRate: number; templates: Record<string, number[]> } | null {
+  private loadCalibration(): {
+    sampleRate: number;
+    templates: Record<string, number[]>;
+    calibrated: string[];
+  } | null {
     try {
       const raw: unknown = JSON.parse(this.store.getItem(this.calibrationKey) ?? 'null');
       if (!isRecord(raw) || typeof raw.sampleRate !== 'number' || !isRecord(raw.templates)) {
@@ -149,38 +155,59 @@ export class MicInput {
         if (norm < 0.5 || norm > 1.5) return null;
         templates[t.id] = (v as number[]).map((x) => x / norm);
       }
-      return { sampleRate: raw.sampleRate, templates };
+      const known = new Set(this.scale.tongues.map((t) => t.id));
+      // В старом формате списка не было: тогда калибровались все поля сразу.
+      const calibrated = Array.isArray(raw.calibrated)
+        ? raw.calibrated.filter((x): x is string => typeof x === 'string' && known.has(x))
+        : [...known];
+      return { sampleRate: raw.sampleRate, templates, calibrated: [...new Set(calibrated)] };
     } catch {
       return null;
     }
   }
 
-  /** 'ok' — калибровка применяется; 'stale' — снята на другой частоте дискретизации; 'none' — нет. */
-  get calibration(): 'ok' | 'stale' | 'none' {
+  /**
+   * 'ok' — откалиброваны все поля; 'partial' — часть; 'none' — ни одного;
+   * 'stale' — калибровка снята на другой частоте дискретизации и не применяется.
+   */
+  get calibration(): 'ok' | 'partial' | 'stale' | 'none' {
     const c = this.loadCalibration();
-    if (!c) return 'none';
-    return !this.ctx || c.sampleRate === this.ctx.sampleRate ? 'ok' : 'stale';
+    if (!c || c.calibrated.length === 0) return 'none';
+    if (this.ctx && c.sampleRate !== this.ctx.sampleRate) return 'stale';
+    return c.calibrated.length >= this.scale.tongues.length ? 'ok' : 'partial';
   }
 
-  saveCalibration(templates: Record<string, ArrayLike<number>> | null): boolean {
-    if (!templates || !this.ctx) {
-      this.store.setItem(this.calibrationKey, 'null');
-      this.rebuildDetector();
-      return templates === null;
+  /** Поля, для которых есть действующая калибровка. */
+  calibratedIds(): string[] {
+    const c = this.loadCalibration();
+    if (!c || (this.ctx && c.sampleRate !== this.ctx.sampleRate)) return [];
+    return c.calibrated;
+  }
+
+  /** Сохраняет шаблон одного поля; остальные поля остаются как были. Нужен запущенный микрофон. */
+  saveTongueCalibration(id: string, template: ArrayLike<number>): boolean {
+    if (!this.ctx) return false;
+    const sr = this.ctx.sampleRate;
+    const prev = this.loadCalibration();
+    const keep = prev && prev.sampleRate === sr ? prev : null;
+    const fallback = defaultTemplates(this.scale.tongues, sr);
+    const round = (v: ArrayLike<number>) => Array.from(v, (x) => Math.round(x * 1e4) / 1e4);
+    const templates: Record<string, number[]> = {};
+    for (const t of this.scale.tongues) {
+      templates[t.id] = round(
+        t.id === id ? template : (keep?.templates[t.id] ?? fallback[t.id]),
+      );
     }
-    const data = {
-      sampleRate: this.ctx.sampleRate,
-      templates: Object.fromEntries(
-        Object.entries(templates).map(([id, v]) => [
-          id,
-          Array.from(v, (x) => Math.round(x * 1e4) / 1e4),
-        ]),
-      ),
-    };
-    const json = JSON.stringify(data);
+    const calibrated = [...new Set([...(keep?.calibrated ?? []), id])];
+    const json = JSON.stringify({ sampleRate: sr, templates, calibrated });
     this.store.setItem(this.calibrationKey, json);
     this.rebuildDetector();
     return this.store.getItem(this.calibrationKey) === json;
+  }
+
+  clearCalibration(): void {
+    this.store.setItem(this.calibrationKey, 'null');
+    this.rebuildDetector();
   }
 
   private rebuildDetector(): void {
@@ -230,6 +257,8 @@ export class MicInput {
               clarity: ev.clarity,
               levelDb: ev.levelDb,
               feature: ev.feature,
+              novelty: ev.novelty,
+              scores: ev.scores,
             }
           : ev;
       for (const fn of [...this.listeners]) {

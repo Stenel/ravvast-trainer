@@ -1,4 +1,4 @@
-import { averageTemplates, cosine, defaultTemplates } from '../core/detector';
+import { averageTemplates, cosine } from '../core/detector';
 import { type AppCtx, type Screen, h, levelMeter, topBar } from './dom';
 import { createInstrument } from './instrument';
 
@@ -6,90 +6,86 @@ const HITS_PER_TONGUE = 3;
 const MIN_GAP_MS = 350;
 /** Если шаблоны двух полей похожи сильнее — микрофон их плохо различает. */
 const CONFUSABLE = 0.92;
+/**
+ * Для эталона нужен чистый удар. У инструмента долгий сустейн: удар по ещё громко
+ * звучащему полю даёт искажённый «отпечаток», поэтому такие удары не принимаем.
+ */
+const MIN_CLEAN_NOVELTY = 0.7;
 
 export function calibrateScreen(ctx: AppCtx): Screen {
   const tongues = ctx.scale.tongues;
-  let index = 0;
-  let collected: Float64Array[][] = tongues.map(() => []);
-  let lastHit = 0;
-  let finished = false;
-  let skipped: string[] = [];
-  const meter = levelMeter(ctx);
+  const noteOfId = (id: string) => tongues.find((t) => t.id === id)?.note ?? id;
+  const firstTodo = () => {
+    const done = ctx.mic.calibratedIds();
+    return tongues.find((t) => !done.includes(t.id))?.id ?? tongues[0].id;
+  };
 
-  const inst = createInstrument(ctx.scale, () => undefined);
+  let selected = firstTodo();
+  let collected: Float64Array[] = [];
+  const templates = new Map<string, Float64Array>();
+  let lastHit = 0;
+  let note = '';
+
+  const inst = createInstrument(ctx.scale, (id) => {
+    selected = id;
+    collected = [];
+    note = '';
+    render();
+  });
+  const meter = levelMeter(ctx);
   const status = h('p', { class: 'calib-status' });
   const detail = h('p', { class: 'hint' });
   const result = h('div', { class: 'message' });
   const actions = h('div', { class: 'row center' });
 
-  function finish(): void {
-    finished = true;
-    // Пропущенные поля распознаются по расчётным частотам.
-    const fallback = defaultTemplates(tongues, ctx.mic.sampleRate ?? 48000);
-    const templates = Object.fromEntries(
-      tongues.map((t, i) => [
-        t.id,
-        collected[i].length ? averageTemplates(collected[i]) : fallback[t.id],
-      ]),
-    );
-    const confusable: string[] = [];
-    for (let a = 0; a < tongues.length; a++) {
-      for (let b = a + 1; b < tongues.length; b++) {
-        if (cosine(templates[tongues[a].id], templates[tongues[b].id]) > CONFUSABLE) {
-          confusable.push(`${tongues[a].note} и ${tongues[b].note}`);
-        }
-      }
+  function say(lines: string[], kind: 'ok' | 'error' | ''): void {
+    result.className = `message ${kind}`;
+    result.replaceChildren(...lines.map((l) => h('div', {}, l)));
+  }
+
+  function saveSelected(): void {
+    const template = averageTemplates(collected);
+    const saved = ctx.mic.saveTongueCalibration(selected, template);
+    templates.set(selected, template);
+    const confusable = [...templates]
+      .filter(([id, t]) => id !== selected && cosine(template, t) > CONFUSABLE)
+      .map(([id]) => noteOfId(id));
+    const lines = [
+      saved ? `Поле ${noteOfId(selected)} откалибровано.` : 'Не удалось сохранить калибровку.',
+    ];
+    if (confusable.length) {
+      lines.push(
+        `Микрофон плохо отличает его от: ${confusable.join(', ')}. Попробуйте поднести телефон ближе и повторить.`,
+      );
     }
-    const saved = ctx.mic.saveCalibration(templates);
-    result.className = `message ${saved ? 'ok' : 'error'}`;
-    result.replaceChildren(
-      h('div', {}, saved ? 'Калибровка сохранена.' : 'Не удалось сохранить калибровку.'),
-      ...(skipped.length
-        ? [h('div', {}, `Пропущены поля: ${skipped.join(', ')} — они распознаются приблизительно.`)]
-        : []),
-      ...(confusable.length
-        ? [
-            h(
-              'div',
-              {},
-              `Микрофон плохо различает поля: ${confusable.join('; ')}. Попробуйте поднести его ближе и повторить.`,
-            ),
-          ]
-        : []),
-    );
-    render();
+    say(lines, saved ? 'ok' : 'error');
+    collected = [];
+    note = '';
+    const done = ctx.mic.calibratedIds();
+    const next = tongues.find((t) => !done.includes(t.id));
+    if (next) selected = next.id;
   }
 
   const unsubscribe = ctx.mic.subscribe((ev) => {
-    if (finished || ev.type !== 'hit') return;
+    if (ev.type !== 'hit') return;
     if (ev.timeMs - lastHit < MIN_GAP_MS) return;
     lastHit = ev.timeMs;
-    collected[index].push(ev.feature);
-    inst.flash(tongues[index].id, 'good');
-    if (collected[index].length >= HITS_PER_TONGUE) {
-      index++;
-      if (index >= tongues.length) {
-        finish();
-        return;
-      }
+    if (ev.novelty < MIN_CLEAN_NOVELTY) {
+      note = 'Поле ещё звучит — приглушите его ладонью и ударьте снова.';
+      inst.flash(selected, 'wrong');
+      render();
+      return;
     }
+    note = '';
+    collected.push(ev.feature);
+    inst.flash(selected, 'good');
+    if (collected.length >= HITS_PER_TONGUE) saveSelected();
     render();
   });
   const unsubStatus = ctx.mic.onStatus(render);
 
-  function restart(): void {
-    skipped = [];
-    index = 0;
-    collected = tongues.map(() => []);
-    finished = false;
-    result.className = 'message';
-    result.replaceChildren();
-    render();
-  }
-
   function render(): void {
-    const on = ctx.mic.status === 'on';
-    if (!on) {
+    if (ctx.mic.status !== 'on') {
       inst.setTargets([]);
       status.textContent =
         ctx.mic.status === 'starting' ? 'Включаю микрофон…' : 'Микрофон не включён.';
@@ -103,61 +99,35 @@ export function calibrateScreen(ctx: AppCtx): Screen {
       );
       return;
     }
-    if (finished) {
-      inst.setTargets([]);
-      status.textContent = 'Готово';
-      detail.textContent = 'Проверьте распознавание в свободной игре.';
-      actions.replaceChildren(
-        h('button', { class: 'btn primary', type: 'button', onclick: ctx.free }, 'Проверить'),
-        h('button', { class: 'btn', type: 'button', onclick: restart }, 'Заново'),
-      );
-      return;
-    }
-    const t = tongues[index];
-    inst.setTargets([t.id]);
-    status.textContent = `Поле ${index + 1} из ${tongues.length}: ${t.note}${t.center ? ' (центр)' : ''}`;
-    detail.textContent = `Ударьте по подсвеченному полю ${HITS_PER_TONGUE} раза с паузой, давая звуку затихнуть. Удар ${collected[index].length + 1} из ${HITS_PER_TONGUE}.`;
+    const done = ctx.mic.calibratedIds();
+    inst.setMarked(done);
+    inst.setTargets([selected]);
+    const t = tongues.find((x) => x.id === selected);
+    const all = done.length >= tongues.length;
+    status.textContent = `${t?.note ?? ''}${t?.center ? ' (центр)' : ''}: удар ${collected.length + 1} из ${HITS_PER_TONGUE} · готово полей: ${done.length} из ${tongues.length}`;
+    detail.textContent =
+      note ||
+      (all
+        ? 'Все поля откалиброваны. Чтобы переснять поле, коснитесь его на схеме.'
+        : 'Ударьте по подсвеченному полю, затем приглушите его ладонью — и так три раза. Другое поле можно выбрать касанием на схеме.');
     actions.replaceChildren(
-      h(
-        'button',
-        {
-          class: 'btn',
-          type: 'button',
-          onclick: () => {
-            collected[index] = [];
-            render();
-          },
-        },
-        'Повторить поле',
-      ),
-      h(
-        'button',
-        {
-          class: 'btn',
-          type: 'button',
-          onclick: () => {
-            collected[index] = [];
-            skipped.push(tongues[index].note);
-            index++;
-            if (index >= tongues.length) finish();
-            else render();
-          },
-        },
-        'Пропустить поле',
-      ),
+      h('button', { class: 'btn primary', type: 'button', onclick: ctx.free }, 'Проверить'),
       h(
         'button',
         {
           class: 'btn ghost',
           type: 'button',
           onclick: () => {
-            ctx.mic.saveCalibration(null);
-            restart();
-            result.className = 'message ok';
-            result.replaceChildren(h('div', {}, 'Калибровка сброшена.'));
+            if (!window.confirm('Сбросить калибровку всех полей?')) return;
+            ctx.mic.clearCalibration();
+            templates.clear();
+            collected = [];
+            selected = tongues[0].id;
+            say(['Калибровка сброшена.'], 'ok');
+            render();
           },
         },
-        'Сбросить калибровку',
+        'Сбросить всё',
       ),
     );
   }

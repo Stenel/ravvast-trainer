@@ -241,6 +241,12 @@ select {
   text-align: right;
 }
 
+.debug {
+  min-height: 1.3em;
+  font-size: 0.8rem;
+  font-variant-numeric: tabular-nums;
+}
+
 .sub {
   font-size: 0.85rem;
   color: var(--muted);
@@ -373,6 +379,11 @@ select {
 .tongue-num {
   font-size: 11px;
   fill: var(--muted) !important;
+}
+
+.tongue.marked circle {
+  stroke: var(--perfect);
+  stroke-width: 3;
 }
 
 .tongue.target circle {

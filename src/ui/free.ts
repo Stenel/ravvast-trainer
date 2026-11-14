@@ -8,6 +8,7 @@ export function freeScreen(ctx: AppCtx): Screen {
     inst.flash(id, 'hit');
   });
   const heard = h('p', { class: 'heard', role: 'status' });
+  const debug = h('p', { class: 'hint debug' });
   const meter = levelMeter(ctx);
   let lastId = -1;
 
@@ -17,6 +18,11 @@ export function freeScreen(ctx: AppCtx): Screen {
       return;
     }
     lastId = ev.id;
+    // Диагностика: на какие поля похож звук и сколько в нём «нового».
+    debug.textContent =
+      ev.scores
+        .map((s) => `${noteOf(ctx.scale, s.id)} ${Math.round(Math.max(0, s.similarity) * 100)}%`)
+        .join(' · ') + ` · новизна ${Math.round(ev.novelty * 100)}%`;
     if (ev.tongues.length === 0) {
       heard.textContent = 'Звук не распознан';
       return;
@@ -31,6 +37,7 @@ export function freeScreen(ctx: AppCtx): Screen {
     { class: 'screen' },
     topBar('Свободная игра', ctx.home),
     heard,
+    debug,
     meter.el,
     h('div', { class: 'stage' }, inst.el as unknown as Node),
     h(

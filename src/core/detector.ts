@@ -1,12 +1,12 @@
 import { renderTone } from './tone';
 
-/** Окно анализа спектра (сэмплов). ~90 мс: хватает, чтобы различить E2 и A2. */
-export const WINDOW = 4096;
+/** Окно анализа спектра (сэмплов), ~170 мс: нужно, чтобы различать соседние низкие поля (B2 и C3). */
+export const WINDOW = 8192;
 /** Шаг поиска ударов (сэмплов), ~5 мс. */
 export const HOP = 256;
 export const BANDS = 96;
 /** Спектр считается с дополнением нулями: точнее положение пиков на низких частотах. */
-const FFT_SIZE = 8192;
+const FFT_SIZE = 16384;
 const F_MIN = 70;
 const F_MAX = 1700;
 const LOG_STEP = Math.log(F_MAX / F_MIN) / BANDS;
@@ -14,9 +14,14 @@ const LOG_STEP = Math.log(F_MAX / F_MIN) / BANDS;
 /** Минимальное сходство с шаблоном, чтобы удар считался узнанным. */
 export const MIN_SIMILARITY = 0.55;
 const PAIR_MIN_SIMILARITY = 0.7;
-const PAIR_MARGIN = 0.05;
+const PAIR_MARGIN = 0.08;
+const PAIR_MEMBER_MIN = 0.48;
+const DOMINANT_MIN_SIMILARITY = 0.35;
+const DOMINANT_RATIO = 2.5;
 /** Доля новой энергии в спектре, ниже которой «удар» считается ложным (биения, шум). */
-const MIN_NOVELTY = 0.12;
+const MIN_NOVELTY = 0.08;
+/** Доля спектрального прироста относительно уже звучащего, с которой срабатывает поиск удара. */
+const FLUX_GAIN = 0.12;
 
 const ENERGY_HOPS = 4; // окно огибающей = 4 шага ≈ 21 мс
 const HISTORY_HOPS = 16; // сравнение с максимумом за ~85 мс
@@ -151,6 +156,10 @@ export type DetectorEvent =
       clarity: number;
       levelDb: number;
       feature: Float64Array;
+      /** Доля новой энергии в звуке, 0..1: мало — удар по ещё громко звучащему полю. */
+      novelty: number;
+      /** Три самых похожих поля — для диагностики. */
+      scores: { id: string; similarity: number }[];
     }
   | { type: 'sustain'; id: number; ratio: number };
 
@@ -291,7 +300,7 @@ export class HitDetector {
         base += m * m;
         if (mags[i] > m) flux += (mags[i] - m) ** 2;
       }
-      hit = flux > FLUX_FLOOR && flux > (this.ratio - 1) * 0.2 * base;
+      hit = flux > FLUX_FLOOR && flux > (this.ratio - 1) * FLUX_GAIN * base;
     }
     this.fluxHist.push(mags);
     if (this.fluxHist.length > FLUX_SPAN) this.fluxHist.shift();
@@ -317,20 +326,28 @@ export class HitDetector {
     if (total <= 0 || fresh / total < MIN_NOVELTY) return null;
 
     const feature = toFeature(post, pre);
-    let best = -1;
-    let bestSim = 0;
-    this.templates.forEach((t, i) => {
-      const s = cosine(feature, t);
-      if (s > bestSim) {
-        bestSim = s;
-        best = i;
-      }
-    });
-    let tongues: string[] = best >= 0 && bestSim >= MIN_SIMILARITY ? [this.ids[best]] : [];
+    const scores = this.templates
+      .map((t, i) => ({ i, id: this.ids[i], similarity: cosine(feature, t) }))
+      .sort((a, b) => b.similarity - a.similarity);
+    const best = scores.length ? scores[0].i : -1;
+    const bestSim = scores.length ? Math.max(0, scores[0].similarity) : 0;
+    // Повторный удар по ещё звучащему полю даёт неполный «отпечаток»: принимаем его,
+    // если одно поле уверенно опережает все остальные.
+    const second = scores.length > 1 ? Math.max(0, scores[1].similarity) : 0;
+    const dominant = bestSim >= DOMINANT_MIN_SIMILARITY && bestSim >= DOMINANT_RATIO * second;
+    let tongues: string[] =
+      best >= 0 && (bestSim >= MIN_SIMILARITY || dominant) ? [this.ids[best]] : [];
     let clarity = bestSim;
+    const single = new Float64Array(this.ids.length);
+    for (const s of scores) single[s.i] = s.similarity;
+    let pairSim = 0;
     for (const pair of this.pairs) {
+      // Оба поля аккорда должны быть слышны и по отдельности: иначе одиночная нота
+      // с обертоном в октаву (B2 → B3) принималась бы за аккорд.
+      if (Math.min(single[pair.a], single[pair.b]) < PAIR_MEMBER_MIN) continue;
       const s = cosine(feature, pair.t);
-      if (s >= PAIR_MIN_SIMILARITY && s > clarity + (tongues.length === 2 ? 0 : PAIR_MARGIN)) {
+      if (s >= PAIR_MIN_SIMILARITY && s > bestSim + PAIR_MARGIN && s > pairSim) {
+        pairSim = s;
         clarity = s;
         tongues = [this.ids[pair.a], this.ids[pair.b]].sort();
       }
@@ -344,6 +361,8 @@ export class HitDetector {
       clarity,
       levelDb: 20 * Math.log10(level + 1e-9),
       feature,
+      novelty: fresh / total,
+      scores: scores.slice(0, 3).map(({ id, similarity }) => ({ id, similarity })),
     };
   }
 
