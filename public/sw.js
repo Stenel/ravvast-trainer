@@ -3,7 +3,19 @@
 const PREFIX = 'ravvast-trainer-';
 const CACHE = `${PREFIX}v2`;
 
-self.addEventListener('install', () => self.skipWaiting());
+// Файлы, которые нужны офлайн, но запрашиваются не сразу (модуль микрофона — только
+// при первом включении микрофона). Сбой предзагрузки установке не мешает.
+const PRECACHE = ['./', './capture-worklet.js', './manifest.webmanifest', './icon-192.png'];
+
+self.addEventListener('install', (event) => {
+  event.waitUntil(
+    caches
+      .open(CACHE)
+      .then((cache) => cache.addAll(PRECACHE))
+      .catch(() => undefined)
+      .then(() => self.skipWaiting()),
+  );
+});
 
 self.addEventListener('activate', (event) => {
   event.waitUntil(
