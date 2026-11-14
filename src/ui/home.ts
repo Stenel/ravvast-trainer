@@ -135,6 +135,11 @@ export function homeScreen(ctx: AppCtx): Screen {
           'div',
           { class: 'row' },
           h('button', { class: 'btn', type: 'button', onclick: ctx.calibrate }, 'Калибровка'),
+          h(
+            'button',
+            { class: 'btn', type: 'button', onclick: ctx.accuracy },
+            'Проверка точности',
+          ),
           h('button', { class: 'btn', type: 'button', onclick: checkAccess }, 'Проверить доступ'),
         ),
         h('label', { class: 'control' }, 'Задержка микрофона, мс', latency),

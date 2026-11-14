@@ -1,6 +1,7 @@
 import './styles.css';
 import { MicInput } from './audio/mic';
 import { Synth } from './audio/synth';
+import { accuracyScreen } from './ui/accuracy';
 import { calibrateScreen } from './ui/calibrate';
 import { loadScales, safeStore } from './data';
 import type { AppCtx, Screen } from './ui/dom';
@@ -68,6 +69,11 @@ try {
       mic.setEnabled(true);
       void mic.start();
       show(calibrateScreen(ctx));
+    },
+    accuracy: () => {
+      mic.setEnabled(true);
+      void mic.start();
+      show(accuracyScreen(ctx));
     },
     play: (comp, difficulty) => withMic(() => show(gameScreen(ctx, comp, difficulty)))(),
     practice: (comp) => withMic(() => show(practiceScreen(ctx, comp)))(),

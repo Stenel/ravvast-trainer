@@ -16,6 +16,7 @@ export interface AppCtx {
   mic: MicInput;
   home(): void;
   calibrate(): void;
+  accuracy(): void;
   free(): void;
   play(comp: Composition, difficulty: Difficulty): void;
   practice(comp: Composition): void;

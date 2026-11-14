@@ -85,7 +85,8 @@ export class MicInput {
   private recording: {
     chunks: Float32Array[];
     left: number;
-    done: (b: Blob) => void;
+    startMs: number | null;
+    onFull: (() => void) | null;
     fail: (e: Error) => void;
   } | null = null;
   private readonly listeners = new Set<(ev: MicEvent) => void>();
@@ -294,14 +295,12 @@ export class MicInput {
 
   private onSamples(samples: Float32Array, frame: number): void {
     if (!this.detector || !this.enabled) return;
-    if (this.recording) {
-      this.recording.chunks.push(samples.slice());
-      this.recording.left -= samples.length;
-      if (this.recording.left <= 0) {
-        const { chunks, done } = this.recording;
-        this.recording = null;
-        done(encodeWav(chunks, this.ctx!.sampleRate));
-      }
+    const rec = this.recording;
+    if (rec && rec.left > 0) {
+      rec.startMs ??= this.frameToMs(frame);
+      rec.chunks.push(samples.slice());
+      rec.left -= samples.length;
+      if (rec.left <= 0) rec.onFull?.();
     }
     let sum = 0;
     for (let i = 0; i < samples.length; i++) sum += samples[i] * samples[i];
@@ -348,10 +347,45 @@ export class MicInput {
       this.recording = {
         chunks: [],
         left: Math.round(seconds * this.ctx!.sampleRate),
-        done,
+        startMs: null,
+        onFull: () => {
+          const finished = this.finishRecording();
+          if (finished) done(finished.blob);
+        },
         fail,
       };
     });
+  }
+
+  private finishRecording(): { blob: Blob; startMs: number } | null {
+    const rec = this.recording;
+    if (!rec || !this.ctx) return null;
+    this.recording = null;
+    return { blob: encodeWav(rec.chunks, this.ctx.sampleRate), startMs: rec.startMs ?? 0 };
+  }
+
+  /**
+   * Начинает запись сырого звука до вызова endCapture (но не дольше maxSeconds).
+   * Возвращает false, если микрофон не включён или запись уже идёт.
+   */
+  beginCapture(maxSeconds: number): boolean {
+    if (!this.ctx || this.status !== 'on' || this.recording) return false;
+    this.recording = {
+      chunks: [],
+      left: Math.round(maxSeconds * this.ctx.sampleRate),
+      startMs: null,
+      onFull: null,
+      fail: () => undefined,
+    };
+    return true;
+  }
+
+  /**
+   * Завершает запись, начатую beginCapture. startMs — момент начала записи на той же
+   * шкале, что и timeMs событий удара: по разности получается место удара в файле.
+   */
+  endCapture(): { blob: Blob; startMs: number } | null {
+    return this.finishRecording();
   }
 
   /** Запрашивает доступ и начинает слушать. Вызывать из обработчика нажатия. */

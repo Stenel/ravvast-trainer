@@ -246,6 +246,11 @@ select {
   text-align: right;
 }
 
+.report {
+  width: min(100%, 420px);
+  margin: 10px auto 0;
+}
+
 .debug {
   min-height: 1.3em;
   font-size: 0.8rem;
