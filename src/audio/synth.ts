@@ -1,9 +1,6 @@
+import { ATTACK_SEC, PARTIALS } from '../core/tone';
+
 /** Простой синтез звука язычкового барабана: основной тон и две гармоники с затуханием. */
-const PARTIALS = [
-  { ratio: 1, gain: 1, decay: 3.2 },
-  { ratio: 2, gain: 0.5, decay: 2.0 },
-  { ratio: 3, gain: 0.18, decay: 1.2 },
-];
 
 export class Synth {
   private ctx: AudioContext | null = null;
@@ -42,7 +39,7 @@ export class Synth {
       osc.frequency.value = freq * p.ratio;
       const peak = Math.max(0.0002, 0.5 * p.gain * velocity);
       gain.gain.setValueAtTime(0.0001, t0);
-      gain.gain.exponentialRampToValueAtTime(peak, t0 + 0.006);
+      gain.gain.exponentialRampToValueAtTime(peak, t0 + ATTACK_SEC);
       gain.gain.exponentialRampToValueAtTime(0.0001, t0 + p.decay);
       osc.connect(gain).connect(this.master);
       osc.start(t0);

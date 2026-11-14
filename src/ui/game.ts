@@ -2,12 +2,16 @@ import { toTimedNotes } from '../core/composition';
 import { DIFFICULTIES, type Difficulty, GameSession, multiplier } from '../core/judge';
 import { PASS_ACCURACY, recordGame } from '../core/progress';
 import type { Composition } from '../core/types';
-import { type AppCtx, type Screen, freqOf, h, topBar } from './dom';
+import { type HitQuality, summarizeQuality } from '../core/quality';
+import { type AppCtx, type Screen, h, playTap, topBar } from './dom';
 import { createInstrument } from './instrument';
 
 const NS = 'http://www.w3.org/2000/svg';
 const LEAD_IN = 1.2;
 const RING_SPREAD = 1.3;
+/** Удар с микрофона приходит с опозданием на время анализа, поэтому промах объявляем позже. */
+const MIC_GRACE = 0.35;
+const LATENCY_HINT_MS = 15;
 
 export function gameScreen(ctx: AppCtx, comp: Composition, difficulty: Difficulty): Screen {
   const cfg = DIFFICULTIES[difficulty];
@@ -48,8 +52,42 @@ export function gameScreen(ctx: AppCtx, comp: Composition, difficulty: Difficult
     rings.delete(index);
   }
 
+  const quality: (HitQuality & { id: number })[] = [];
+
+  const unsubscribeMic = ctx.mic.subscribe((ev) => {
+    if (ev.type === 'sustain') {
+      for (const q of quality) if (q.id === ev.id) q.sustain = ev.ratio;
+      return;
+    }
+    if (done || pausedAt !== null || ev.tongues.length === 0) return;
+    const t = (ev.timeMs - startAt) / 1000;
+    let counted = false;
+    for (const id of ev.tongues) {
+      const r = session.hit(id, t);
+      if (r.grade === 'stray') {
+        inst.flash(id, 'wrong');
+        showJudge('Мимо', 'miss');
+      } else {
+        inst.flash(id, r.grade);
+        removeRing(r.index);
+        showJudge(r.grade === 'perfect' ? 'Идеально!' : 'Хорошо', r.grade);
+        // Аккорд — один удар: качество учитываем один раз.
+        if (counted) continue;
+        counted = true;
+        quality.push({
+          id: ev.id,
+          clarity: ev.clarity,
+          levelDb: ev.levelDb,
+          offsetMs: r.offset * 1000,
+        });
+      }
+    }
+    renderHud();
+    checkFinished();
+  });
+
   const inst = createInstrument(ctx.scale, (id) => {
-    ctx.synth.play(freqOf(ctx.scale, id));
+    playTap(ctx, id);
     if (done || pausedAt !== null) {
       inst.flash(id, 'hit');
       return;
@@ -78,7 +116,7 @@ export function gameScreen(ctx: AppCtx, comp: Composition, difficulty: Difficult
 
   function frame(): void {
     const t = now();
-    const missed = session.update(t);
+    const missed = session.update(ctx.mic.active ? t - MIC_GRACE : t);
     for (const i of missed) {
       removeRing(i);
       inst.flash(notes[i].tongue, 'miss');
@@ -134,6 +172,38 @@ export function gameScreen(ctx: AppCtx, comp: Composition, difficulty: Difficult
     const passed = session.accuracy >= PASS_ACCURACY;
     const row = (label: string, value: string) =>
       h('div', { class: 'result-row' }, h('span', {}, label), h('strong', {}, value));
+    const q = summarizeQuality(quality);
+    const qualityRows: (Node | string)[] = [];
+    if (q.hits > 0) {
+      qualityRows.push(h('h3', { class: 'sub' }, 'Качество звука (по микрофону)'));
+      if (q.clarity !== null) qualityRows.push(row('Чистота тона', `${q.clarity}%`));
+      if (q.evennessDb !== null) {
+        qualityRows.push(row('Разброс громкости', `±${q.evennessDb.toFixed(1)} дБ`));
+      }
+      qualityRows.push(row('Заглушённых ударов', String(q.muted)));
+      const off = q.meanOffsetMs;
+      if (off !== null) {
+        qualityRows.push(
+          row('В среднем', off === 0 ? 'точно' : `на ${Math.abs(off)} мс ${off > 0 ? 'позже' : 'раньше'}`),
+        );
+        if (Math.abs(off) >= LATENCY_HINT_MS) {
+          const btn = h(
+            'button',
+            {
+              class: 'btn wide-btn',
+              type: 'button',
+              onclick: () => {
+                ctx.mic.setLatency(ctx.mic.latencyMs + off);
+                btn.disabled = true;
+                btn.textContent = `Задержка микрофона: ${ctx.mic.latencyMs} мс`;
+              },
+            },
+            'Учесть это как задержку микрофона',
+          );
+          qualityRows.push(btn);
+        }
+      }
+    }
     overlayHost.replaceChildren(
       h(
         'div',
@@ -149,6 +219,7 @@ export function gameScreen(ctx: AppCtx, comp: Composition, difficulty: Difficult
           row('Идеально', String(session.counts.perfect)),
           row('Хорошо', String(session.counts.good)),
           row('Пропущено', String(session.counts.miss)),
+          ...qualityRows,
           passed
             ? ''
             : h(
@@ -184,7 +255,13 @@ export function gameScreen(ctx: AppCtx, comp: Composition, difficulty: Difficult
       h('div', {}, 'Комбо ', comboEl, ' ', multEl),
     ),
     h('div', { class: 'stage' }, inst.el as unknown as Node),
-    h('p', { class: 'hint' }, 'Касайтесь поля, когда кольцо сожмётся до его края.'),
+    h(
+      'p',
+      { class: 'hint' },
+      ctx.mic.enabled
+        ? 'Ударяйте по полю инструмента, когда кольцо сожмётся до его края. Микрофон слушает.'
+        : 'Касайтесь поля, когда кольцо сожмётся до его края.',
+    ),
     overlayHost,
   );
 
@@ -198,6 +275,7 @@ export function gameScreen(ctx: AppCtx, comp: Composition, difficulty: Difficult
       window.clearTimeout(finishTimer);
       window.clearTimeout(judgeTimer);
       document.removeEventListener('visibilitychange', onVisibility);
+      unsubscribeMic();
       inst.destroy();
     },
   };

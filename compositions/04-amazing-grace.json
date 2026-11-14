@@ -1,0 +1,43 @@
+{
+  "id": "builtin-amazing-grace",
+  "title": "Amazing Grace (адаптация)",
+  "scale": "e-low-pygmy",
+  "bpm": 80,
+  "notes": [
+    { "tongue": "8", "beat": 0, "duration": 1 },
+    { "tongue": "5", "beat": 1, "duration": 2 },
+    { "tongue": "7", "beat": 3, "duration": 0.5 },
+    { "tongue": "5", "beat": 3.5, "duration": 0.5 },
+    { "tongue": "7", "beat": 4, "duration": 2 },
+    { "tongue": "6", "beat": 6, "duration": 1 },
+    { "tongue": "5", "beat": 7, "duration": 2 },
+    { "tongue": "4", "beat": 9, "duration": 1 },
+    { "tongue": "8", "beat": 10, "duration": 2 },
+
+    { "tongue": "8", "beat": 12, "duration": 1 },
+    { "tongue": "5", "beat": 13, "duration": 2 },
+    { "tongue": "7", "beat": 15, "duration": 0.5 },
+    { "tongue": "5", "beat": 15.5, "duration": 0.5 },
+    { "tongue": "7", "beat": 16, "duration": 2 },
+    { "tongue": "6", "beat": 18, "duration": 1 },
+    { "tongue": "8", "beat": 19, "duration": 5 },
+
+    { "tongue": "7", "beat": 24, "duration": 1 },
+    { "tongue": "8", "beat": 25, "duration": 2 },
+    { "tongue": "7", "beat": 27, "duration": 0.5 },
+    { "tongue": "5", "beat": 27.5, "duration": 0.5 },
+    { "tongue": "7", "beat": 28, "duration": 2 },
+    { "tongue": "6", "beat": 30, "duration": 1 },
+    { "tongue": "5", "beat": 31, "duration": 2 },
+    { "tongue": "4", "beat": 33, "duration": 1 },
+    { "tongue": "8", "beat": 34, "duration": 2 },
+
+    { "tongue": "8", "beat": 36, "duration": 1 },
+    { "tongue": "5", "beat": 37, "duration": 2 },
+    { "tongue": "7", "beat": 39, "duration": 0.5 },
+    { "tongue": "5", "beat": 39.5, "duration": 0.5 },
+    { "tongue": "7", "beat": 40, "duration": 2 },
+    { "tongue": "6", "beat": 42, "duration": 1 },
+    { "tongue": "5", "beat": 43, "duration": 4 }
+  ]
+}

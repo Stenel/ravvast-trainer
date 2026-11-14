@@ -1,5 +1,7 @@
 import './styles.css';
+import { MicInput } from './audio/mic';
 import { Synth } from './audio/synth';
+import { calibrateScreen } from './ui/calibrate';
 import { loadScales, safeStore } from './data';
 import type { AppCtx, Screen } from './ui/dom';
 import { freeScreen } from './ui/free';
@@ -22,14 +24,36 @@ function show(screen: Screen): void {
 try {
   const scales = loadScales();
   if (scales.length === 0) throw new Error('В папке scales нет ни одного строя.');
+  const mic = new MicInput(safeStore, scales[0]);
+  // Экраны открываются по нажатию, поэтому здесь можно запросить микрофон.
+  // Ждём готовности микрофона, чтобы отсчёт игры не шёл во время запроса доступа.
+  let opening = false;
+  const withMic = (open: () => void) => () => {
+    if (!mic.enabled || mic.status === 'on') {
+      open();
+      return;
+    }
+    if (opening) return;
+    opening = true;
+    void mic.start().finally(() => {
+      opening = false;
+      open();
+    });
+  };
   const ctx: AppCtx = {
     scale: scales[0],
     synth: new Synth(),
     store: safeStore,
+    mic,
     home: () => show(homeScreen(ctx)),
-    free: () => show(freeScreen(ctx)),
-    play: (comp, difficulty) => show(gameScreen(ctx, comp, difficulty)),
-    practice: (comp) => show(practiceScreen(ctx, comp)),
+    free: withMic(() => show(freeScreen(ctx))),
+    calibrate: () => {
+      mic.setEnabled(true);
+      void mic.start();
+      show(calibrateScreen(ctx));
+    },
+    play: (comp, difficulty) => withMic(() => show(gameScreen(ctx, comp, difficulty)))(),
+    practice: (comp) => withMic(() => show(practiceScreen(ctx, comp)))(),
   };
   for (const type of ['pointerup', 'touchend', 'click', 'keydown']) {
     document.addEventListener(type, () => ctx.synth.unlock(), { passive: true });

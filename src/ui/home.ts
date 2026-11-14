@@ -34,6 +34,99 @@ export function homeScreen(ctx: AppCtx): Screen {
     message.replaceChildren(...lines.map((l) => h('div', {}, l)));
   }
 
+  const inputBox = h('div', { class: 'input-box' });
+
+  const MIC_STATUS: Record<string, string> = {
+    off: 'Микрофон выключен — включится при запуске игры или по кнопке.',
+    starting: 'Включаю микрофон…',
+    on: 'Микрофон слушает инструмент.',
+    denied: 'Нет доступа к микрофону. Разрешите его для этого сайта в настройках браузера.',
+    unsupported: 'Этот браузер не поддерживает запись звука.',
+    insecure: 'Микрофон доступен только по HTTPS или на localhost.',
+    error: 'Не удалось запустить микрофон. Проверьте, что он подключён и не занят.',
+  };
+  const CALIBRATION: Record<string, string> = {
+    ok: 'Калибровка выполнена.',
+    stale: 'Калибровка снята на другом устройстве звука — повторите её.',
+    none: 'Калибровка не выполнена: распознавание приблизительное.',
+  };
+
+  function renderInput(): void {
+    const mic = ctx.mic;
+    const seg = (label: string, on: boolean, click: () => void) =>
+      h(
+        'button',
+        { type: 'button', class: on ? 'seg active' : 'seg', 'aria-pressed': String(on), onclick: click },
+        label,
+      );
+    const children: (Node | string)[] = [
+      h(
+        'div',
+        { class: 'segmented two', role: 'group', 'aria-label': 'Способ ввода' },
+        seg('Экран', !mic.enabled, () => {
+          mic.setEnabled(false);
+          renderInput();
+        }),
+        seg('Микрофон', mic.enabled, () => {
+          mic.setEnabled(true);
+          renderInput();
+          void mic.start();
+        }),
+      ),
+    ];
+    if (mic.enabled) {
+      const latency = h('input', {
+        type: 'number',
+        min: -400,
+        max: 400,
+        step: 5,
+        value: mic.latencyMs,
+        inputmode: 'numeric',
+        'aria-label': 'Задержка микрофона, мс',
+        onchange: () => {
+          mic.setLatency(Number(latency.value));
+          latency.value = String(mic.latencyMs);
+        },
+      });
+      const sens = h(
+        'select',
+        {
+          'aria-label': 'Чувствительность',
+          onchange: () => mic.setSensitivity(sens.value as 'low' | 'normal' | 'high'),
+        },
+        h('option', { value: 'low' }, 'низкая'),
+        h('option', { value: 'normal' }, 'средняя'),
+        h('option', { value: 'high' }, 'высокая'),
+      );
+      sens.value = mic.sensitivity;
+      children.push(
+        h('p', { class: mic.status === 'on' ? 'meta ok-text' : 'meta' }, MIC_STATUS[mic.status]),
+        h('p', { class: 'meta' }, CALIBRATION[mic.calibration]),
+        h(
+          'div',
+          { class: 'row' },
+          h('button', { class: 'btn', type: 'button', onclick: ctx.calibrate }, 'Калибровка'),
+          mic.status === 'on'
+            ? ''
+            : h(
+                'button',
+                { class: 'btn', type: 'button', onclick: () => void mic.start() },
+                'Включить микрофон',
+              ),
+        ),
+        h('label', { class: 'control' }, 'Задержка микрофона, мс', latency),
+        h('label', { class: 'control' }, 'Чувствительность', sens),
+        h(
+          'p',
+          { class: 'meta' },
+          'Положите устройство рядом с инструментом. В наушниках с микрофоном и по Bluetooth задержка больше.',
+        ),
+      );
+    }
+    inputBox.replaceChildren(...children);
+  }
+  const unsubStatus = ctx.mic.onStatus(renderInput);
+
   function renderDifficulty(): void {
     diffRow.replaceChildren(
       ...(Object.keys(DIFFICULTIES) as Difficulty[]).map((d) =>
@@ -171,8 +264,10 @@ export function homeScreen(ctx: AppCtx): Screen {
     h(
       'button',
       { class: 'btn wide-btn', type: 'button', onclick: ctx.free },
-      'Свободная игра на инструменте',
+      'Свободная игра и проверка распознавания',
     ),
+    h('h2', {}, 'Чем играть'),
+    inputBox,
     h('h2', {}, 'Сложность игры'),
     diffRow,
     h('h2', {}, 'Композиции'),
@@ -197,8 +292,9 @@ export function homeScreen(ctx: AppCtx): Screen {
     ),
   );
 
+  renderInput();
   renderDifficulty();
   renderList();
 
-  return { el, destroy() {} };
+  return { el, destroy: unsubStatus };
 }

@@ -1,7 +1,8 @@
 import { PracticeSession, buildSteps, stepSeconds } from '../core/practice';
 import { markCompleted } from '../core/progress';
 import type { Composition } from '../core/types';
-import { type AppCtx, type Screen, freqOf, h, noteOf, topBar } from './dom';
+import { MUTED_RATIO, clarityPercent } from '../core/quality';
+import { type AppCtx, type Screen, freqOf, h, noteOf, playTap, topBar } from './dom';
 import { createInstrument } from './instrument';
 
 export function practiceScreen(ctx: AppCtx, comp: Composition): Screen {
@@ -12,20 +13,44 @@ export function practiceScreen(ctx: AppCtx, comp: Composition): Screen {
   let running = false;
   let timer = 0;
   let toastTimer = 0;
+  let justCompleted = false;
 
-  const inst = createInstrument(ctx.scale, (id) => {
-    ctx.synth.play(freqOf(ctx.scale, id));
-    if (!wait) {
-      inst.flash(id, 'hit');
-      return;
-    }
+  /** Нажатие поля (с экрана или с микрофона) в режиме ожидания. Возвращает, верная ли нота. */
+  function press(id: string): boolean {
     const r = session.press(id);
     inst.flash(id, r.correct ? 'good' : 'wrong');
     if (r.completed) {
+      justCompleted = true;
       markCompleted(ctx.store, comp.id);
       toast('Композиция пройдена! Начинаем сначала.');
     }
     render();
+    return r.correct;
+  }
+
+  const inst = createInstrument(ctx.scale, (id) => {
+    playTap(ctx, id);
+    if (wait) press(id);
+    else inst.flash(id, 'hit');
+  });
+
+  let lastMicHit = -1;
+  const unsubscribeMic = ctx.mic.subscribe((ev) => {
+    // Без ожидания композицию играет синтезатор — его звук не должен засчитываться.
+    if (!wait) return;
+    if (ev.type === 'sustain') {
+      if (ev.id === lastMicHit && ev.ratio < MUTED_RATIO) {
+        toast('Удар заглушён — дайте полю прозвучать.');
+      }
+      return;
+    }
+    justCompleted = false;
+    let correct = false;
+    for (const id of ev.tongues) correct = press(id) || correct;
+    if (correct) {
+      lastMicHit = ev.id;
+      if (!justCompleted) toast(`Чистота тона: ${clarityPercent(ev.clarity)}%`);
+    }
   });
 
   // --- элементы управления ---
@@ -145,6 +170,7 @@ export function practiceScreen(ctx: AppCtx, comp: Composition): Screen {
 
   function scheduleStep(): void {
     for (const t of steps[session.index].tongues) {
+      // Демонстрация: звучит всегда, микрофон в этом режиме не учитывается.
       ctx.synth.play(freqOf(ctx.scale, t), 0.8);
       inst.flash(t, 'good');
     }
@@ -211,6 +237,7 @@ export function practiceScreen(ctx: AppCtx, comp: Composition): Screen {
     el,
     destroy() {
       stop();
+      unsubscribeMic();
       window.clearTimeout(toastTimer);
       inst.destroy();
     },

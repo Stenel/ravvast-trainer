@@ -166,6 +166,58 @@ h3 {
   font-weight: 600;
 }
 
+.segmented.two {
+  grid-template-columns: repeat(2, 1fr);
+}
+
+.input-box {
+  display: grid;
+  gap: 8px;
+}
+
+.input-box .control {
+  justify-content: space-between;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.ok-text {
+  color: var(--perfect);
+}
+
+select {
+  font: inherit;
+  min-height: 40px;
+  background: var(--panel-2);
+  color: var(--text);
+  border: 1px solid transparent;
+  border-radius: 8px;
+  padding: 4px 8px;
+}
+
+.row.center {
+  justify-content: center;
+}
+
+.calib-status,
+.heard {
+  text-align: center;
+  font-weight: 600;
+  min-height: 1.4em;
+  margin: 8px 0 0;
+}
+
+.sub {
+  font-size: 0.85rem;
+  color: var(--muted);
+  margin: 14px 0 4px;
+}
+
+.modal-card {
+  max-height: 92dvh;
+  overflow-y: auto;
+}
+
 .list {
   display: grid;
   gap: 10px;

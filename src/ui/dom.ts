@@ -1,3 +1,4 @@
+import type { MicInput } from '../audio/mic';
 import type { Synth } from '../audio/synth';
 import type { Difficulty } from '../core/judge';
 import type { KeyValueStore } from '../core/progress';
@@ -12,7 +13,9 @@ export interface AppCtx {
   scale: Scale;
   synth: Synth;
   store: KeyValueStore;
+  mic: MicInput;
   home(): void;
+  calibrate(): void;
   free(): void;
   play(comp: Composition, difficulty: Difficulty): void;
   practice(comp: Composition): void;
@@ -45,6 +48,14 @@ export function topBar(title: string, onBack: () => void, extra?: Node): HTMLEle
     h('h1', {}, title),
     extra ?? h('span', {}),
   );
+}
+
+/**
+ * Звук при касании поля на экране. Когда слушает микрофон, синтезатор молчит,
+ * иначе его звук из динамика был бы распознан как удар по инструменту.
+ */
+export function playTap(ctx: AppCtx, tongueId: string, velocity = 1): void {
+  if (!ctx.mic.active) ctx.synth.play(freqOf(ctx.scale, tongueId), velocity);
 }
 
 export function freqOf(scale: Scale, tongueId: string): number {
