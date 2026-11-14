@@ -105,6 +105,16 @@ describe('GameSession', () => {
     expect(s.maxCombo).toBe(12);
   });
 
+  it('hasPending сообщает о несыгранной ноте в окне и ничего не меняет', () => {
+    const s = new GameSession([n('1', 1), n('2', 1)], 'normal');
+    expect(s.hasPending('2', 1.05)).toBe(true);
+    expect(s.hasPending('2', 1.5)).toBe(false);
+    expect(s.hasPending('3', 1)).toBe(false);
+    expect(s.combo).toBe(0);
+    s.hit('2', 1);
+    expect(s.hasPending('2', 1)).toBe(false);
+  });
+
   it('пустая сессия сразу завершена с нулевой точностью', () => {
     const s = new GameSession([], 'easy');
     expect(s.finished).toBe(true);

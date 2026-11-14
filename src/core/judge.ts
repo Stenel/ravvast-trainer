@@ -69,6 +69,23 @@ export class GameSession {
     return (this.counts.perfect + this.counts.good) / this.notes.length;
   }
 
+  /** Есть ли ещё не сыгранная нота этого поля, в окно которой попадает момент time. */
+  hasPending(tongue: string, time: number): boolean {
+    const window = DIFFICULTIES[this.difficulty].good;
+    for (let i = this.firstPending; i < this.notes.length; i++) {
+      const note = this.notes[i];
+      if (note.time - time > window + EPS) break;
+      if (
+        this.states[i] === 'pending' &&
+        note.tongue === tongue &&
+        Math.abs(time - note.time) <= window + EPS
+      ) {
+        return true;
+      }
+    }
+    return false;
+  }
+
   /** Удар по полю в момент time (секунды от начала композиции). */
   hit(tongue: string, time: number): HitResult {
     const window = DIFFICULTIES[this.difficulty].good;

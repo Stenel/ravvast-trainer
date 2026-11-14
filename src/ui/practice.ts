@@ -46,7 +46,13 @@ export function practiceScreen(ctx: AppCtx, comp: Composition): Screen {
     }
     justCompleted = false;
     let correct = false;
-    for (const id of ev.tongues) correct = press(id) || correct;
+    // Аккорд — один удар, микрофон надёжно различает в нём только одно поле:
+    // если услышано любое поле текущего шага, засчитываем шаг целиком.
+    const remaining = session.remaining;
+    const heard = ev.tongues.some((id) => remaining.includes(id))
+      ? [...new Set([...ev.tongues, ...remaining])]
+      : [...ev.tongues];
+    for (const id of heard) correct = press(id) || correct;
     if (correct) {
       lastMicHit = ev.id;
       if (!justCompleted) toast(`Чистота тона: ${clarityPercent(ev.clarity)}%`);

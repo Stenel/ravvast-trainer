@@ -12,6 +12,8 @@ const RING_SPREAD = 1.3;
 /** Удар с микрофона приходит с опозданием на время анализа, поэтому промах объявляем позже. */
 const MIC_GRACE = 0.35;
 const LATENCY_HINT_MS = 15;
+/** Ноты ближе этого (в секундах) считаются одним аккордом. */
+const CHORD_SPREAD = 0.03;
 
 export function gameScreen(ctx: AppCtx, comp: Composition, difficulty: Difficulty): Screen {
   const cfg = DIFFICULTIES[difficulty];
@@ -62,7 +64,27 @@ export function gameScreen(ctx: AppCtx, comp: Composition, difficulty: Difficult
     if (done || pausedAt !== null || ev.tongues.length === 0) return;
     const t = (ev.timeMs - startAt) / 1000;
     let counted = false;
+    // Аккорд — это один удар, и микрофон надёжно различает в нём только одно поле
+    // (обертоны нижнего поля совпадают с верхними). Поэтому, если услышано любое поле
+    // ожидаемого аккорда, засчитываем аккорд целиком.
+    const heard = [...ev.tongues];
     for (const id of ev.tongues) {
+      const i = notes.findIndex(
+        (n, k) =>
+          n.tongue === id && session.state(k) === 'pending' && Math.abs(n.time - t) <= cfg.good,
+      );
+      if (i < 0) continue;
+      notes.forEach((n, k) => {
+        if (
+          session.state(k) === 'pending' &&
+          Math.abs(n.time - notes[i].time) < CHORD_SPREAD &&
+          !heard.includes(n.tongue)
+        ) {
+          heard.push(n.tongue);
+        }
+      });
+    }
+    for (const id of heard) {
       const r = session.hit(id, t);
       if (r.grade === 'stray') {
         inst.flash(id, 'wrong');

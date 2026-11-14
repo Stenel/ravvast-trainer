@@ -19,10 +19,15 @@ export function renderTone(
   sampleRate: number,
   amp = 1,
   decayScale = 1,
+  /** Измеренный спектр поля: пары [номер гармоники, относительная амплитуда]. */
+  spectrum?: readonly (readonly [number, number])[],
 ): Float32Array {
   const out = new Float32Array(Math.max(0, length));
   const k = Math.log(1 / DECAY_FLOOR);
-  for (const p of PARTIALS) {
+  const partials = spectrum
+    ? spectrum.map(([ratio, gain]) => ({ ratio, gain, decay: PARTIALS[0].decay }))
+    : PARTIALS;
+  for (const p of partials) {
     const w = (2 * Math.PI * freq * p.ratio) / sampleRate;
     const rate = k / (p.decay * decayScale * sampleRate);
     const attack = ATTACK_SEC * sampleRate;

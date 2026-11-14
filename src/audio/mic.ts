@@ -111,7 +111,8 @@ export class MicInput {
   }
 
   private get calibrationKey(): string {
-    return `ravvast-trainer:calibration:${this.scale.id}:v1`;
+    // v2: изменился способ построения «отпечатка», старые калибровки несовместимы.
+    return `ravvast-trainer:calibration:${this.scale.id}:v2`;
   }
 
   private saveSettings(): void {

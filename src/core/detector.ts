@@ -15,11 +15,11 @@ const LOG_STEP = Math.log(F_MAX / F_MIN) / BANDS;
 export const MIN_SIMILARITY = 0.55;
 const PAIR_MIN_SIMILARITY = 0.7;
 const PAIR_MARGIN = 0.08;
-const PAIR_MEMBER_MIN = 0.48;
+const PAIR_MEMBER_MIN = 0.6;
 const DOMINANT_MIN_SIMILARITY = 0.35;
 const DOMINANT_RATIO = 2.5;
 /** Доля новой энергии в спектре, ниже которой «удар» считается ложным (биения, шум). */
-const MIN_NOVELTY = 0.08;
+const MIN_NOVELTY = 0.18;
 /** Доля спектрального прироста относительно уже звучащего, с которой срабатывает поиск удара. */
 const FLUX_GAIN = 0.12;
 
@@ -115,10 +115,23 @@ function unit(v: Float64Array): Float64Array {
   return v;
 }
 
-/** «Отпечаток» удара: новая энергия (после минус до), сжатая корнем, сглаженная и нормированная. */
+/** Полосы слабее этой доли от самой сильной считаются остатками и шумом. */
+const FEATURE_GATE = 0.01; // −20 дБ
+
+/**
+ * «Отпечаток» удара: новая энергия (после минус до) по полосам, сильно сжатая,
+ * сглаженная и нормированная. Сильное сжатие (степень 1/4) нужно, чтобы слабый, но
+ * присутствующий основной тон низких полей (82 Гц у E2 в микрофоне телефона на 12–15 дБ
+ * тише третьей гармоники) заметно влиял на сравнение — по нему E2 отличается от B3.
+ */
 export function toFeature(post: Float64Array, pre?: Float64Array): Float64Array {
   const d = new Float64Array(BANDS);
-  for (let i = 0; i < BANDS; i++) d[i] = Math.sqrt(Math.max(0, post[i] - (pre ? pre[i] : 0)));
+  let max = 0;
+  for (let i = 0; i < BANDS; i++) {
+    d[i] = Math.max(0, post[i] - (pre ? pre[i] : 0));
+    if (d[i] > max) max = d[i];
+  }
+  for (let i = 0; i < BANDS; i++) d[i] = d[i] < FEATURE_GATE * max ? 0 : d[i] ** 0.25;
   const out = new Float64Array(BANDS);
   for (let i = 0; i < BANDS; i++) {
     out[i] = 0.5 * d[i] + 0.25 * (d[i - 1] ?? 0) + 0.25 * (d[i + 1] ?? 0);
@@ -141,12 +154,12 @@ export function averageTemplates(features: ArrayLike<number>[]): Float64Array {
 
 /** Шаблоны по номинальным частотам строя — работают без калибровки, но грубее. */
 export function defaultTemplates(
-  tongues: readonly { id: string; freq: number }[],
+  tongues: readonly { id: string; freq: number; partials?: readonly (readonly [number, number])[] }[],
   sampleRate: number,
 ): Record<string, Float64Array> {
   const out: Record<string, Float64Array> = Object.create(null);
   for (const t of tongues) {
-    const tone = renderTone(t.freq, WINDOW, sampleRate);
+    const tone = renderTone(t.freq, WINDOW, sampleRate, 1, 1, t.partials);
     out[t.id] = toFeature(bandPowers((i) => tone[i], sampleRate));
   }
   return out;

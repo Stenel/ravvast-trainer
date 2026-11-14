@@ -48,7 +48,31 @@ export function parseScale(raw: unknown): Result<Scale> {
       if (!center && angle === null) {
         errors.push(`${where}: укажите "angle" в градусах или "position": "center".`);
       }
-      tongues.push({ id: tid, note, freq: freq ?? 0, center, angle: angle ?? 0 });
+      let partials: [number, number][] | undefined;
+      if (t.partials !== undefined) {
+        const ok =
+          Array.isArray(t.partials) &&
+          t.partials.length > 0 &&
+          t.partials.length <= 16 &&
+          t.partials.every(
+            (p: unknown) =>
+              Array.isArray(p) &&
+              p.length === 2 &&
+              p.every((x) => typeof x === 'number' && Number.isFinite(x) && x > 0) &&
+              p[0] <= 32 &&
+              p[1] <= 4,
+          );
+        if (ok) partials = (t.partials as [number, number][]).map(([r, g]) => [r, g]);
+        else errors.push(`${where}: "partials" должен быть списком пар [гармоника, амплитуда].`);
+      }
+      tongues.push({
+        id: tid,
+        note,
+        freq: freq ?? 0,
+        center,
+        angle: angle ?? 0,
+        ...(partials ? { partials } : {}),
+      });
     });
   }
 
