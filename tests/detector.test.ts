@@ -69,6 +69,26 @@ describe('шаблоны', () => {
   });
 });
 
+describe('призвук от приглушения', () => {
+  const sr = 48000;
+
+  it('тихий призвук на ещё звучащем поле вскоре после удара ударом не считается', () => {
+    const events = run(
+      detector(sr),
+      mix(sr, 2.2, [
+        { id: '7', t: 0.2 },
+        { id: '7', t: 1.2, amp: 0.03 },
+      ]),
+    );
+    expect(hitsOf(events).map((h) => h.tongues)).toEqual([['7']]);
+  });
+
+  it('такой же тихий удар в тишине узнаётся', () => {
+    const events = run(detector(sr), mix(sr, 1.2, [{ id: '7', t: 0.3, amp: 0.03 }]));
+    expect(known(events).map((h) => h.tongues)).toEqual([['7']]);
+  });
+});
+
 describe.each([44100, 48000])('HitDetector при %i Гц', (sr) => {
   it('тишина и слабый шум не дают событий', () => {
     expect(run(detector(sr), mix(sr, 1.5, [], 0.002))).toEqual([]);

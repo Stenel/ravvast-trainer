@@ -137,8 +137,9 @@ export class MicInput {
   }
 
   private get calibrationKey(): string {
-    // v2: изменился способ построения «отпечатка», старые калибровки несовместимы.
-    return `ravvast-trainer:calibration:${this.scale.id}:v2`;
+    // v3: изменился «отпечаток», а в прежние калибровки попадали призвуки от приглушения —
+    // на размеченной записи они распознавали хуже встроенных шаблонов. Старые не читаем.
+    return `ravvast-trainer:calibration:${this.scale.id}:v3`;
   }
 
   private saveSettings(): void {
@@ -242,6 +243,20 @@ export class MicInput {
     const c = this.loadCalibration();
     if (!c || (this.ctx && c.sampleRate !== this.ctx.sampleRate)) return [];
     return c.calibrated;
+  }
+
+  /** Встроенные шаблоны полей для текущей частоты дискретизации (null — микрофон не запущен). */
+  builtinTemplates(): Record<string, Float64Array> | null {
+    return this.ctx ? defaultTemplates(this.scale.tongues, this.ctx.sampleRate) : null;
+  }
+
+  /** Шаблоны откалиброванных полей — для отчёта о проверке точности. */
+  calibratedTemplates(): Record<string, number[]> {
+    const c = this.loadCalibration();
+    const out: Record<string, number[]> = {};
+    if (!c || (this.ctx && c.sampleRate !== this.ctx.sampleRate)) return out;
+    for (const id of c.calibrated) out[id] = c.templates[id];
+    return out;
   }
 
   /** Сохраняет шаблон одного поля; остальные поля остаются как были. Нужен запущенный микрофон. */

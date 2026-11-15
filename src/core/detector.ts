@@ -48,6 +48,11 @@ const PEAK_FRACTION = 0.02;
 /** Доля энергии в 10 самых сильных полосах: у ноты она высокая, у шума — низкая. */
 const MIN_TONALITY = 0.5;
 const TONALITY_BANDS = 10;
+// Призвук от приглушения: в течение ECHO_SECONDS после удара звук тише его на ECHO_DROP_DB
+// и с долей новой энергии ниже ECHO_MAX_NOVELTY ударом не считается.
+const ECHO_SECONDS = 3;
+const ECHO_DROP_DB = 10;
+const ECHO_MAX_NOVELTY = 0.8;
 const BUFFER = 1 << 17;
 const MASK = BUFFER - 1;
 
@@ -309,7 +314,13 @@ function unit(v: Float64Array): Float64Array {
 }
 
 /** Полосы слабее этой доли от самой сильной считаются остатками и шумом. */
-const FEATURE_GATE = 0.01; // −20 дБ
+const FEATURE_GATE = 0.003; // −25 дБ
+/**
+ * Полосы выше ~965 Гц в сравнении не участвуют: на записи с телефона там у сильных ударов
+ * любого поля одни и те же призвуки (около 1010 и 1060 Гц), а всё, чем поля различаются,
+ * лежит ниже (до 950 Гц у E3).
+ */
+const FEATURE_BANDS = 79;
 
 /**
  * «Отпечаток» удара: новая энергия (после минус до) по полосам, сильно сжатая,
@@ -320,7 +331,7 @@ const FEATURE_GATE = 0.01; // −20 дБ
 export function toFeature(post: Float64Array, pre?: Float64Array): Float64Array {
   const d = new Float64Array(BANDS);
   let max = 0;
-  for (let i = 0; i < BANDS; i++) {
+  for (let i = 0; i < FEATURE_BANDS; i++) {
     d[i] = Math.max(0, post[i] - (pre ? pre[i] : 0));
     if (d[i] > max) max = d[i];
   }
@@ -436,6 +447,7 @@ export class HitDetector {
   private readonly top = new Float64Array(TONALITY_BANDS);
   private pending: Pending[] = [];
   private nextId = 1;
+  private lastStrike: { frame: number; levelDb: number } | null = null;
 
   constructor(opts: DetectorOptions) {
     this.sr = opts.sampleRate;
@@ -693,14 +705,27 @@ export class HitDetector {
         tongues = [this.ids[pair.a], this.ids[pair.b]].sort();
       }
     }
-    const level = this.rms(p.frame, p.frame + WINDOW);
+    const levelDb = 20 * Math.log10(this.rms(p.frame, p.frame + WINDOW) + 1e-9);
+    // Касание звучащего поля (приглушение ладонью) даёт тихий призвук, похожий на то же
+    // или соседнее поле. От настоящего удара его отличают сразу два признака: он намного
+    // тише недавнего удара и в нём заметная доля старого звука.
+    const last = this.lastStrike;
+    if (
+      last &&
+      p.frame - last.frame < ECHO_SECONDS * this.sr &&
+      levelDb < last.levelDb - ECHO_DROP_DB &&
+      fresh / total < ECHO_MAX_NOVELTY
+    ) {
+      return null;
+    }
+    if (tongues.length > 0) this.lastStrike = { frame: p.frame, levelDb };
     return {
       type: 'hit',
       id: p.id,
       frame: p.frame,
       tongues,
       clarity,
-      levelDb: 20 * Math.log10(level + 1e-9),
+      levelDb,
       feature,
       novelty: fresh / total,
       scores: scores.slice(0, 3).map(({ id, similarity }) => ({ id, similarity })),

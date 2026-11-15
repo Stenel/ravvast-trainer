@@ -5,6 +5,10 @@ const ROUNDS = 3;
 /** Пауза после удара перед следующим заданием: рука успевает приглушить поле. */
 const NEXT_DELAY_MS = 1400;
 const MAX_CAPTURE_SECONDS = 240;
+/** Неузнанный звук тише этого уровня считается шорохом, а не ударом. */
+const QUIET_NOISE_DB = -38;
+/** Сразу после появления задания звуки не засчитываются: это касание экрана или хвост прошлого удара. */
+const PROMPT_GUARD_MS = 400;
 
 interface Trial {
   expected: string;
@@ -48,6 +52,15 @@ export function accuracyScreen(ctx: AppCtx): Screen {
   }
 
   const trials: Trial[] = [];
+  /** Все услышанные за проверку звуки, а не только засчитанные: видно, что срабатывало лишнего. */
+  const log: {
+    rawTimeMs: number;
+    heard: string[];
+    levelDb: number;
+    novelty: number;
+    counted: boolean;
+  }[] = [];
+  let askedAt = 0;
   let index = -1; // -1 — ещё не начато
   let waiting = false;
   let nextTimer = 0;
@@ -76,6 +89,7 @@ export function accuracyScreen(ctx: AppCtx): Screen {
       return;
     }
     waiting = true;
+    askedAt = performance.now();
     render();
   }
 
@@ -89,7 +103,21 @@ export function accuracyScreen(ctx: AppCtx): Screen {
   }
 
   const unsubscribe = ctx.mic.subscribe((ev) => {
-    if (ev.type !== 'hit' || !waiting) return;
+    if (ev.type !== 'hit') return;
+    if (index < 0 || index >= order.length) return;
+    const entry = {
+      rawTimeMs: ev.timeMs,
+      heard: ev.tongues,
+      levelDb: ev.levelDb,
+      novelty: ev.novelty,
+      counted: false,
+    };
+    log.push(entry);
+    if (!waiting) return;
+    // Тихий неузнанный звук (касание экрана, шорох) — не удар: задание на него не тратим.
+    if (ev.tongues.length === 0 && ev.levelDb < QUIET_NOISE_DB) return;
+    if (performance.now() - askedAt < PROMPT_GUARD_MS) return;
+    entry.counted = true;
     answer({
       expected: order[index],
       heard: ev.tongues,
@@ -106,6 +134,7 @@ export function accuracyScreen(ctx: AppCtx): Screen {
   function start(): void {
     window.clearTimeout(nextTimer);
     trials.length = 0;
+    log.length = 0;
     index = -1;
     capture = null;
     report.replaceChildren();
@@ -152,6 +181,14 @@ export function accuracyScreen(ctx: AppCtx): Screen {
       sampleRate: ctx.mic.sampleRate,
       calibration: ctx.mic.calibration,
       sensitivity: ctx.mic.sensitivity,
+      calibratedTemplates: ctx.mic.calibratedTemplates(),
+      events: log.map((e) => ({
+        timeSec: capture ? Math.round(e.rawTimeMs - capture.startMs) / 1000 : null,
+        heard: e.heard.map((id) => noteOf(ctx.scale, id)),
+        levelDb: Math.round(e.levelDb * 10) / 10,
+        novelty: Math.round(e.novelty * 100) / 100,
+        counted: e.counted,
+      })),
       trials: trials.map((t) => ({
         expected: noteOf(ctx.scale, t.expected),
         expectedId: t.expected,

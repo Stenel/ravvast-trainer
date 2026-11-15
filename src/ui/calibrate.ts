@@ -3,16 +3,20 @@ import { type AppCtx, type Screen, h, levelMeter, topBar } from './dom';
 import { createInstrument } from './instrument';
 
 const HITS_PER_TONGUE = 3;
-const MIN_GAP_MS = 350;
+const MIN_GAP_MS = 700;
 /** Если шаблоны двух полей похожи сильнее — микрофон их плохо различает. */
 const CONFUSABLE = 0.92;
 /**
  * Для эталона нужен чистый удар. У инструмента долгий сустейн: удар по ещё громко
  * звучащему полю даёт искажённый «отпечаток», поэтому такие удары не принимаем.
  */
-const MIN_CLEAN_NOVELTY = 0.7;
-/** Ниже этого сходства с любым полем звук считается посторонним. */
-const MIN_ANY_SIMILARITY = 0.3;
+const MIN_CLEAN_NOVELTY = 0.85;
+/**
+ * Ниже этого сходства со встроенным шаблоном выбранного поля удар в эталон не берём:
+ * это другое поле, призвук от приглушения или посторонний звук. Именно такие звуки
+ * раньше попадали в калибровку и портили её.
+ */
+const MIN_OWN_SIMILARITY = 0.5;
 
 export function calibrateScreen(ctx: AppCtx): Screen {
   const tongues = ctx.scale.tongues;
@@ -46,7 +50,10 @@ export function calibrateScreen(ctx: AppCtx): Screen {
   }
 
   function saveSelected(): void {
-    const template = averageTemplates(collected);
+    // Встроенный шаблон участвует в среднем как ещё один удар: уточнение под микрофон
+    // не может увести эталон далеко от измеренного спектра поля.
+    const builtin = ctx.mic.builtinTemplates()?.[selected];
+    const template = averageTemplates(builtin ? [...collected, builtin] : collected);
     const saved = ctx.mic.saveTongueCalibration(selected, template);
     templates.set(selected, template);
     const confusable = [...templates]
@@ -72,9 +79,9 @@ export function calibrateScreen(ctx: AppCtx): Screen {
     if (ev.type !== 'hit') return;
     if (ev.timeMs - lastHit < MIN_GAP_MS) return;
     lastHit = ev.timeMs;
-    // Шум, хлопок или голос не похожи ни на одно поле даже отдалённо — в эталон их не берём.
-    if ((ev.scores[0]?.similarity ?? 0) < MIN_ANY_SIMILARITY) {
-      note = 'Это не похоже на удар по полю — попробуйте ещё раз.';
+    const builtin = ctx.mic.builtinTemplates()?.[selected];
+    if (builtin && cosine(ev.feature, builtin) < MIN_OWN_SIMILARITY) {
+      note = `Это не похоже на удар по полю ${noteOfId(selected)} — ударьте по подсвеченному полю ещё раз.`;
       inst.flash(selected, 'wrong');
       render();
       return;
