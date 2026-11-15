@@ -1,0 +1,30 @@
+{
+  "id": "builtin-horn-call",
+  "title": "Зов рога",
+  "scale": "e-low-pygmy",
+  "bpm": 56,
+  "level": 1,
+  "notes": [
+    { "tongue": "4", "beat": 0, "duration": 2 },
+    { "tongue": "7", "beat": 2, "duration": 2 },
+    { "tongue": "8", "beat": 4, "duration": 4 },
+
+    { "tongue": "7", "beat": 8, "duration": 2 },
+    { "tongue": "6", "beat": 10, "duration": 2 },
+    { "tongue": "5", "beat": 12, "duration": 4 },
+
+    { "tongue": "4", "beat": 16, "duration": 2 },
+    { "tongue": "5", "beat": 18, "duration": 2 },
+    { "tongue": "6", "beat": 20, "duration": 2 },
+    { "tongue": "7", "beat": 22, "duration": 2 },
+
+    { "tongue": "8", "beat": 24, "duration": 4 },
+    { "tongue": "7", "beat": 28, "duration": 4 },
+
+    { "tongue": "5", "beat": 32, "duration": 2 },
+    { "tongue": "6", "beat": 34, "duration": 2 },
+    { "tongue": "4", "beat": 36, "duration": 4 },
+
+    { "tongue": "0", "beat": 40, "duration": 8 }
+  ]
+}

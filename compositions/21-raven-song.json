@@ -1,0 +1,38 @@
+{
+  "id": "builtin-raven-song",
+  "title": "Песнь ворона",
+  "scale": "e-low-pygmy",
+  "bpm": 66,
+  "level": 2,
+  "notes": [
+    { "tongue": "4", "beat": 0, "duration": 2 },
+    { "tongue": "5", "beat": 2, "duration": 1 },
+    { "tongue": "6", "beat": 3, "duration": 2 },
+    { "tongue": "5", "beat": 5, "duration": 1 },
+    { "tongue": "4", "beat": 6, "duration": 2 },
+    { "tongue": "8", "beat": 8, "duration": 1 },
+    { "tongue": "7", "beat": 9, "duration": 3 },
+
+    { "tongue": "6", "beat": 12, "duration": 2 },
+    { "tongue": "7", "beat": 14, "duration": 1 },
+    { "tongue": "8", "beat": 15, "duration": 2 },
+    { "tongue": "7", "beat": 17, "duration": 1 },
+    { "tongue": "6", "beat": 18, "duration": 2 },
+    { "tongue": "5", "beat": 20, "duration": 1 },
+    { "tongue": "4", "beat": 21, "duration": 3 },
+
+    { "tongue": "1", "beat": 24, "duration": 2 },
+    { "tongue": "4", "beat": 26, "duration": 1 },
+    { "tongue": "5", "beat": 27, "duration": 2 },
+    { "tongue": "6", "beat": 29, "duration": 1 },
+    { "tongue": "3", "beat": 30, "duration": 2 },
+    { "tongue": "5", "beat": 32, "duration": 1 },
+    { "tongue": "6", "beat": 33, "duration": 3 },
+
+    { "tongue": "2", "beat": 36, "duration": 2 },
+    { "tongue": "6", "beat": 38, "duration": 1 },
+    { "tongue": "5", "beat": 39, "duration": 2 },
+    { "tongue": "4", "beat": 41, "duration": 1 },
+    { "tongue": "0", "beat": 42, "duration": 6 }
+  ]
+}

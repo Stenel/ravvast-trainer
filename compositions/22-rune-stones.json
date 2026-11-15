@@ -1,0 +1,28 @@
+{
+  "id": "builtin-rune-stones",
+  "title": "Руны на камне",
+  "scale": "e-low-pygmy",
+  "bpm": 52,
+  "level": 1,
+  "notes": [
+    { "tongue": "0", "beat": 0, "duration": 4 },
+    { "tongue": "2", "beat": 4, "duration": 2 },
+    { "tongue": "3", "beat": 6, "duration": 2 },
+    { "tongue": "4", "beat": 8, "duration": 4 },
+
+    { "tongue": "3", "beat": 12, "duration": 2 },
+    { "tongue": "2", "beat": 14, "duration": 2 },
+    { "tongue": "1", "beat": 16, "duration": 4 },
+
+    { "tongue": "3", "beat": 20, "duration": 2 },
+    { "tongue": "4", "beat": 22, "duration": 2 },
+    { "tongue": "5", "beat": 24, "duration": 4 },
+
+    { "tongue": "4", "beat": 28, "duration": 2 },
+    { "tongue": "3", "beat": 30, "duration": 2 },
+    { "tongue": "2", "beat": 32, "duration": 4 },
+    { "tongue": "1", "beat": 36, "duration": 4 },
+
+    { "tongue": "0", "beat": 40, "duration": 8 }
+  ]
+}

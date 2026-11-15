@@ -1,0 +1,27 @@
+{
+  "id": "builtin-long-night",
+  "title": "Долгая ночь",
+  "scale": "e-low-pygmy",
+  "bpm": 48,
+  "level": 1,
+  "notes": [
+    { "tongue": "0", "beat": 0, "duration": 4 },
+    { "tongue": "4", "beat": 4, "duration": 4 },
+    { "tongue": "5", "beat": 8, "duration": 2 },
+    { "tongue": "6", "beat": 10, "duration": 2 },
+    { "tongue": "4", "beat": 12, "duration": 4 },
+
+    { "tongue": "1", "beat": 16, "duration": 4 },
+    { "tongue": "6", "beat": 20, "duration": 2 },
+    { "tongue": "5", "beat": 22, "duration": 2 },
+    { "tongue": "8", "beat": 24, "duration": 4 },
+    { "tongue": "7", "beat": 28, "duration": 4 },
+
+    { "tongue": "3", "beat": 32, "duration": 4 },
+    { "tongue": "5", "beat": 36, "duration": 2 },
+    { "tongue": "6", "beat": 38, "duration": 2 },
+    { "tongue": "4", "beat": 40, "duration": 4 },
+
+    { "tongue": "0", "beat": 44, "duration": 8 }
+  ]
+}

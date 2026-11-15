@@ -136,8 +136,8 @@ describe('поставляемые примеры', () => {
   const ps = parseScale(pygmy);
   if (!ps.ok) throw new Error('scale');
 
-  it('в комплекте восемнадцать композиций', () => {
-    expect(Object.keys(files)).toHaveLength(18);
+  it('в комплекте двадцать четыре композиции', () => {
+    expect(Object.keys(files)).toHaveLength(24);
   });
 
   for (const [path, raw] of Object.entries(files)) {
