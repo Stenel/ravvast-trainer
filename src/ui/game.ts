@@ -3,7 +3,7 @@ import { DIFFICULTIES, type Difficulty, GameSession, multiplier } from '../core/
 import { PASS_ACCURACY, recordGame } from '../core/progress';
 import type { Composition } from '../core/types';
 import { type HitQuality, summarizeQuality } from '../core/quality';
-import { type AppCtx, type Screen, h, playTap, topBar } from './dom';
+import { type AppCtx, type Screen, h, noteOf, playTap, topBar } from './dom';
 import { createInstrument } from './instrument';
 
 const NS = 'http://www.w3.org/2000/svg';
@@ -52,6 +52,47 @@ export function gameScreen(ctx: AppCtx, comp: Composition, difficulty: Difficult
   function removeRing(index: number): void {
     rings.get(index)?.remove();
     rings.delete(index);
+  }
+
+  // Ноты по порядку, аккорд — одна группа. По ним видно, что бить сейчас и что потом.
+  const groups: number[][] = [];
+  notes.forEach((n, i) => {
+    const last = groups[groups.length - 1];
+    if (last && Math.abs(n.time - notes[last[0]].time) < CHORD_SPREAD) last.push(i);
+    else groups.push([i]);
+  });
+  let groupAt = 0;
+  let cueKey = '';
+  const queueEl = h('div', { class: 'queue', 'aria-hidden': 'true' });
+
+  /** Подсвечивает ближайшую несыгранную ноту и следующую за ней. Возвращает индексы ближайших. */
+  function updateCue(): readonly number[] {
+    while (
+      groupAt < groups.length &&
+      groups[groupAt].every((i) => session.state(i) !== 'pending')
+    ) {
+      groupAt++;
+    }
+    const current = (groups[groupAt] ?? []).filter((i) => session.state(i) === 'pending');
+    const key = `${groupAt}:${current.join(',')}`;
+    if (key !== cueKey) {
+      cueKey = key;
+      const targets = current.map((i) => notes[i].tongue);
+      inst.setTargets(targets);
+      inst.setNext(
+        (groups[groupAt + 1] ?? []).map((i) => notes[i].tongue).filter((t) => !targets.includes(t)),
+      );
+      queueEl.replaceChildren(
+        ...groups.slice(groupAt, groupAt + 5).map((g, k) =>
+          h(
+            'span',
+            { class: k === 0 ? 'queue-item now' : 'queue-item' },
+            g.map((i) => noteOf(ctx.scale, notes[i].tongue)).join('+'),
+          ),
+        ),
+      );
+    }
+    return current;
   }
 
   const quality: (HitQuality & { id: number })[] = [];
@@ -182,11 +223,15 @@ export function gameScreen(ctx: AppCtx, comp: Composition, difficulty: Difficult
       }
       spawn++;
     }
+    const current = updateCue();
     for (const [i, ring] of rings) {
       const p = inst.pos(notes[i].tongue);
       const k = Math.max(0, (notes[i].time - t) / cfg.approach);
+      const isNow = current.includes(i);
+      ring.classList.toggle('now', isNow);
       ring.setAttribute('r', (p.r * (1 + RING_SPREAD * k)).toFixed(1));
-      ring.style.opacity = (1 - 0.75 * k).toFixed(2);
+      // Кольца более поздних нот приглушены, чтобы не спорить с ближайшей.
+      ring.style.opacity = ((1 - 0.75 * k) * (isNow ? 1 : 0.4)).toFixed(2);
     }
 
     const total = notes[notes.length - 1].time || 1;
@@ -298,6 +343,7 @@ export function gameScreen(ctx: AppCtx, comp: Composition, difficulty: Difficult
       judgeEl,
       h('div', {}, 'Комбо ', comboEl, ' ', multEl),
     ),
+    queueEl,
     h('div', { class: 'stage' }, inst.el as unknown as Node),
     h(
       'p',

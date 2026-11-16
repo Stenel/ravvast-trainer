@@ -80,8 +80,38 @@ export function createInstrument(scale: Scale, onHit: (id: string) => void): Ins
     root.append(g);
   }
 
+  // Стрелка от поля, по которому бить сейчас, к следующему: рука знает, куда идти дальше.
+  const guide = svg('g', { class: 'guide' });
   const overlay = svg('g', { class: 'overlay' });
-  root.append(overlay);
+  root.append(guide, overlay);
+
+  let targetIds: readonly string[] = [];
+  let nextIds: readonly string[] = [];
+
+  function drawGuide(): void {
+    guide.replaceChildren();
+    const a = positions.get(targetIds[0] ?? '');
+    const b = positions.get(nextIds[0] ?? '');
+    if (!a || !b || a === b) return;
+    const dist = Math.hypot(b.x - a.x, b.y - a.y);
+    const ux = (b.x - a.x) / dist;
+    const uy = (b.y - a.y) / dist;
+    const head = 13;
+    // Остриё чуть заходит внутрь следующего поля: у соседних полей зазора почти нет.
+    const tip = dist - b.r + 7;
+    const base = tip - head;
+    const start = a.r + 3;
+    const at = (d: number, side = 0) =>
+      `${(a.x + ux * d - uy * side).toFixed(1)},${(a.y + uy * d + ux * side).toFixed(1)}`;
+    if (base - start > 4) {
+      const [x1, y1] = at(start).split(',');
+      const [x2, y2] = at(base).split(',');
+      guide.append(svg('line', { x1, y1, x2, y2 }));
+    }
+    guide.append(
+      svg('polygon', { points: `${at(tip)} ${at(base, head * 0.6)} ${at(base, -head * 0.6)}` }),
+    );
+  }
 
   const onKey = (ev: KeyboardEvent) => {
     if (ev.repeat || ev.ctrlKey || ev.metaKey || ev.altKey) return;
@@ -110,9 +140,13 @@ export function createInstrument(scale: Scale, onHit: (id: string) => void): Ins
     },
     setTargets(ids) {
       for (const [id, g] of groups) g.classList.toggle('target', ids.includes(id));
+      targetIds = [...ids];
+      drawGuide();
     },
     setNext(ids) {
       for (const [id, g] of groups) g.classList.toggle('next', ids.includes(id));
+      nextIds = [...ids];
+      drawGuide();
     },
     setMarked(ids) {
       for (const [id, g] of groups) g.classList.toggle('marked', ids.includes(id));

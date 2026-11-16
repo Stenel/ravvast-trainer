@@ -405,7 +405,7 @@ select {
 .tongue.next circle {
   stroke: var(--accent);
   stroke-dasharray: 6 5;
-  stroke-opacity: 0.8;
+  stroke-width: 3;
 }
 
 .judge.count {
@@ -461,7 +461,54 @@ select {
 .ring {
   fill: none;
   stroke: var(--good);
+  stroke-width: 3;
+}
+
+.ring.now {
+  stroke-width: 7;
+}
+
+.guide {
+  pointer-events: none;
+}
+
+.guide line {
+  stroke: var(--accent);
   stroke-width: 4;
+  stroke-linecap: round;
+  stroke-dasharray: 1 9;
+}
+
+.guide polygon {
+  fill: var(--accent);
+}
+
+/* В игре ритм задают кольца: поле «сейчас» светится ровно, без собственного мигания. */
+.instrument.pulsing .tongue.target circle {
+  animation: none;
+}
+
+.queue {
+  display: flex;
+  justify-content: center;
+  align-items: baseline;
+  gap: 6px;
+  min-height: 2em;
+  color: var(--muted);
+  font-size: 0.95rem;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.queue-item + .queue-item::before {
+  content: '→ ';
+  opacity: 0.5;
+}
+
+.queue-item.now {
+  color: var(--text);
+  font-size: 1.4rem;
+  font-weight: 700;
 }
 
 /* --- игра --- */
