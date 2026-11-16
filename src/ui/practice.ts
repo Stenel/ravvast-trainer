@@ -2,7 +2,7 @@ import { PracticeSession, buildSteps, stepSeconds } from '../core/practice';
 import { markCompleted } from '../core/progress';
 import type { Composition } from '../core/types';
 import { MUTED_RATIO, clarityPercent } from '../core/quality';
-import { type AppCtx, type Screen, freqOf, h, noteOf, playTap, topBar } from './dom';
+import { type AppCtx, type Screen, h, noteOf, playTap, playTongue, topBar } from './dom';
 import { createInstrument } from './instrument';
 
 export function practiceScreen(ctx: AppCtx, comp: Composition): Screen {
@@ -184,7 +184,7 @@ export function practiceScreen(ctx: AppCtx, comp: Composition): Screen {
   function scheduleStep(): void {
     for (const t of steps[session.index].tongues) {
       // Демонстрация: звучит всегда, микрофон в этом режиме не учитывается.
-      ctx.synth.play(freqOf(ctx.scale, t), 0.8);
+      playTongue(ctx, t, 0.8);
       inst.flash(t, 'good');
     }
     render();

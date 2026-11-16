@@ -30,7 +30,8 @@ body {
 #app {
   max-width: 720px;
   margin: 0 auto;
-  padding: 0 16px calc(24px + env(safe-area-inset-bottom));
+  padding: 0 max(16px, env(safe-area-inset-right)) calc(24px + env(safe-area-inset-bottom))
+    max(16px, env(safe-area-inset-left));
 }
 
 h1 {
@@ -681,6 +682,59 @@ input[type='number']:disabled {
 
 .toast.show {
   opacity: 1;
+}
+
+/* --- телефон в горизонтальном положении: инструмент слева, остальное справа --- */
+
+@media (orientation: landscape) and (max-height: 560px) {
+  #app {
+    max-width: none;
+    padding-bottom: 0;
+  }
+
+  .hero {
+    padding: 10px 0 6px;
+  }
+
+  .list {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .screen:has(> .stage) {
+    --stage-w: min(100dvh, 48vw);
+    padding-left: var(--stage-w);
+    justify-content: center;
+  }
+
+  .screen > .stage {
+    position: fixed;
+    top: 0;
+    bottom: 0;
+    left: env(safe-area-inset-left, 0px);
+    width: var(--stage-w);
+    padding: 6px;
+  }
+
+  .screen > .stage .instrument {
+    width: min(100%, calc(100dvh - 12px));
+  }
+
+  .topbar {
+    padding: 4px 0;
+  }
+
+  .hint {
+    font-size: 0.8rem;
+  }
+
+  .strip {
+    padding: 4px 0;
+  }
+
+  .controls {
+    padding: 8px 10px;
+    gap: 4px;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

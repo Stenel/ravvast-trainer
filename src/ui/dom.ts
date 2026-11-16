@@ -56,7 +56,13 @@ export function topBar(title: string, onBack: () => void, extra?: Node): HTMLEle
  * иначе его звук из динамика был бы распознан как удар по инструменту.
  */
 export function playTap(ctx: AppCtx, tongueId: string, velocity = 1): void {
-  if (!ctx.mic.active) ctx.synth.play(freqOf(ctx.scale, tongueId), velocity);
+  if (!ctx.mic.active) playTongue(ctx, tongueId, velocity);
+}
+
+/** Звук поля из синтезатора, без оглядки на микрофон (демонстрация композиции). */
+export function playTongue(ctx: AppCtx, tongueId: string, velocity = 1): void {
+  const tongue = ctx.scale.tongues.find((t) => t.id === tongueId);
+  if (tongue) ctx.synth.play(tongue, velocity);
 }
 
 /** Индикатор уровня микрофона: показывает, что вообще слышит устройство. */
@@ -75,10 +81,6 @@ export function levelMeter(ctx: AppCtx): { el: HTMLElement; destroy(): void } {
   }, 120);
   el.hidden = true;
   return { el, destroy: () => window.clearInterval(timer) };
-}
-
-export function freqOf(scale: Scale, tongueId: string): number {
-  return scale.tongues.find((t) => t.id === tongueId)?.freq ?? 0;
 }
 
 export function noteOf(scale: Scale, tongueId: string): string {
