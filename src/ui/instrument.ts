@@ -15,6 +15,8 @@ export interface Instrument {
   setTargets(ids: readonly string[]): void;
   /** Ненавязчивая подсказка: поля, которые понадобятся следующими. */
   setNext(ids: readonly string[]): void;
+  /** Поля, по которым бить прямо сейчас: кольцо сошлось с краем. */
+  setStrike(ids: readonly string[]): void;
   /** Постоянная пометка полей (например, уже откалиброванных). */
   setMarked(ids: readonly string[]): void;
   pos(id: string): { x: number; y: number; r: number };
@@ -147,6 +149,9 @@ export function createInstrument(scale: Scale, onHit: (id: string) => void): Ins
       for (const [id, g] of groups) g.classList.toggle('next', ids.includes(id));
       nextIds = [...ids];
       drawGuide();
+    },
+    setStrike(ids) {
+      for (const [id, g] of groups) g.classList.toggle('strike', ids.includes(id));
     },
     setMarked(ids) {
       for (const [id, g] of groups) g.classList.toggle('marked', ids.includes(id));

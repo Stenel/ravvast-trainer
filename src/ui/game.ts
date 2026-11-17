@@ -63,6 +63,7 @@ export function gameScreen(ctx: AppCtx, comp: Composition, difficulty: Difficult
   });
   let groupAt = 0;
   let cueKey = '';
+  let strikeKey = '';
   const queueEl = h('div', { class: 'queue', 'aria-hidden': 'true' });
 
   /** Подсвечивает ближайшую несыгранную ноту и следующую за ней. Возвращает индексы ближайших. */
@@ -224,11 +225,19 @@ export function gameScreen(ctx: AppCtx, comp: Composition, difficulty: Difficult
       spawn++;
     }
     const current = updateCue();
+    // «Бей сейчас»: кольцо сошлось с краем поля — поле загорается целиком.
+    const strike = current.filter((i) => notes[i].time - t <= cfg.perfect);
+    const strikeNow = strike.map((i) => notes[i].tongue).join(',');
+    if (strikeNow !== strikeKey) {
+      strikeKey = strikeNow;
+      inst.setStrike(strike.map((i) => notes[i].tongue));
+    }
     for (const [i, ring] of rings) {
       const p = inst.pos(notes[i].tongue);
       const k = Math.max(0, (notes[i].time - t) / cfg.approach);
       const isNow = current.includes(i);
       ring.classList.toggle('now', isNow);
+      ring.classList.toggle('strike', strike.includes(i));
       ring.setAttribute('r', (p.r * (1 + RING_SPREAD * k)).toFixed(1));
       // Кольца более поздних нот приглушены, чтобы не спорить с ближайшей.
       ring.style.opacity = ((1 - 0.75 * k) * (isNow ? 1 : 0.4)).toFixed(2);
@@ -349,8 +358,8 @@ export function gameScreen(ctx: AppCtx, comp: Composition, difficulty: Difficult
       'p',
       { class: 'hint' },
       ctx.mic.enabled
-        ? 'Ударяйте по полю инструмента, когда кольцо сожмётся до его края. Микрофон слушает.'
-        : 'Касайтесь поля, когда кольцо сожмётся до его края.',
+        ? 'Ударяйте по полю, когда белое кольцо сойдётся с краем и поле загорится жёлтым. Микрофон слушает.'
+        : 'Касайтесь поля, когда белое кольцо сойдётся с краем и поле загорится жёлтым.',
     ),
     overlayHost,
   );
