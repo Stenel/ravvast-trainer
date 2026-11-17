@@ -1,7 +1,7 @@
 // Контроль на размеченной записи «Проверки точности» с телефона: 26 ударов, для каждого
 // известно, по какому полю били. Запись лежит в samples/ (в репозиторий не входит),
 // без неё тест пропускается.
-import { existsSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { HitDetector, defaultTemplates } from '../src/core/detector';
 import { parseScale } from '../src/core/scale';
@@ -91,5 +91,51 @@ describe.skipIf(!existsSync(SAMPLE))('размеченная запись accura
   it('между ударами (приглушение ладонью, шум) поля не «слышатся»', () => {
     const extra = run().filter((r) => !r.truth && r.heard);
     expect(extra).toEqual([]);
+  });
+});
+
+// Вторая проверка точности (без калибровки, в комнате с гулом 100 Гц) и запись свободной игры
+// из той же комнаты. Разметка ударов берётся из отчёта приложения.
+const SAMPLE2 = 'samples/accuracy-02.wav';
+const LABELS2 = 'samples/accuracy-02.json';
+const FREE3 = 'samples/free-03.wav';
+
+function detect(path: string) {
+  const ps = parseScale(pygmy);
+  if (!ps.ok) throw new Error('scale');
+  const tongues = ps.value.tongues;
+  const noteOf = (id: string) => tongues.find((t) => t.id === id)?.note ?? id;
+  const { sr, samples } = readWav(path);
+  const det = new HitDetector({ sampleRate: sr, templates: defaultTemplates(tongues, sr) });
+  const rows: { t: number; heard: string; novelty: number }[] = [];
+  for (let i = 0; i < samples.length; i += 512) {
+    for (const e of det.push(samples.subarray(i, i + 512))) {
+      if (e.type === 'hit')
+        rows.push({ t: e.frame / sr, heard: e.tongues.map(noteOf).join('+'), novelty: e.novelty });
+    }
+  }
+  return rows;
+}
+
+describe.skipIf(!existsSync(SAMPLE2) || !existsSync(LABELS2))('размеченная запись accuracy-02', () => {
+  it('все удары узнаются верно, фоновый гул ударом не считается', () => {
+    const labels = JSON.parse(readFileSync(LABELS2, 'utf8')) as {
+      trials: { expected: string; heard: string[] | null; timeSec: number }[];
+    };
+    // Первое задание в отчёте засчитано по гулу до удара — настоящих ударов 26.
+    const strikes = labels.trials.filter((t) => t.heard && t.heard.length > 0);
+    expect(strikes.length).toBe(26);
+    const rows = detect(SAMPLE2);
+    const wrong = strikes.filter(
+      (s) => !rows.some((r) => Math.abs(r.t - s.timeSec) < 0.15 && r.heard === s.expected),
+    );
+    expect(wrong).toEqual([]);
+    expect(rows.filter((r) => r.t < 2.5)).toEqual([]);
+  });
+});
+
+describe.skipIf(!existsSync(FREE3))('свободная игра free-03', () => {
+  it('до первого удара (3,4 с) гул не принимается за поле', () => {
+    expect(detect(FREE3).filter((r) => r.t < 3.3 && r.heard)).toEqual([]);
   });
 });

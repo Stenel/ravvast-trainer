@@ -7,6 +7,8 @@ const NEXT_DELAY_MS = 1400;
 const MAX_CAPTURE_SECONDS = 240;
 /** Неузнанный звук тише этого уровня считается шорохом, а не ударом. */
 const QUIET_NOISE_DB = -38;
+/** Неузнанный звук с долей нового ниже этой — фон, а не удар. */
+const NOISE_MAX_NOVELTY = 0.6;
 /** Сразу после появления задания звуки не засчитываются: это касание экрана или хвост прошлого удара. */
 const PROMPT_GUARD_MS = 400;
 
@@ -115,7 +117,9 @@ export function accuracyScreen(ctx: AppCtx): Screen {
     log.push(entry);
     if (!waiting) return;
     // Тихий неузнанный звук (касание экрана, шорох) — не удар: задание на него не тратим.
-    if (ev.tongues.length === 0 && ev.levelDb < QUIET_NOISE_DB) return;
+    // Удар даёт почти целиком новый спектр; у гула и шорохов доля нового заметно ниже.
+    if (ev.tongues.length === 0 && (ev.levelDb < QUIET_NOISE_DB || ev.novelty < NOISE_MAX_NOVELTY))
+      return;
     if (performance.now() - askedAt < PROMPT_GUARD_MS) return;
     entry.counted = true;
     answer({

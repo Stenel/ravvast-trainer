@@ -53,6 +53,9 @@ const TONALITY_BANDS = 10;
 const ECHO_SECONDS = 3;
 const ECHO_DROP_DB = 10;
 const ECHO_MAX_NOVELTY = 0.8;
+/** Звук не громче фона на столько дБ и с долей нового ниже порога ударом не считается. */
+const FAINT_MARGIN_DB = 8;
+const FAINT_MAX_NOVELTY = 0.6;
 const BUFFER = 1 << 17;
 const MASK = BUFFER - 1;
 
@@ -715,6 +718,16 @@ export class HitDetector {
       p.frame - last.frame < ECHO_SECONDS * this.sr &&
       levelDb < last.levelDb - ECHO_DROP_DB &&
       fresh / total < ECHO_MAX_NOVELTY
+    ) {
+      return null;
+    }
+    // Звук почти на уровне фона и без резкой новой энергии — шорох или гул, а не удар:
+    // настоящий тихий удар всё равно даёт почти целиком «новый» спектр.
+    const noise = this.noiseEnergy;
+    if (
+      noise > 0 &&
+      levelDb < 10 * Math.log10(noise) + FAINT_MARGIN_DB &&
+      fresh / total < FAINT_MAX_NOVELTY
     ) {
       return null;
     }
