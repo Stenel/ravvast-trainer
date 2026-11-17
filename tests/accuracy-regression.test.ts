@@ -141,6 +141,15 @@ describe.skipIf(!existsSync('samples/free-02.wav'))('свободная игра
   });
 });
 
+describe.skipIf(!existsSync('samples/e2-01.wav'))('семь ударов по E2 (e2-01)', () => {
+  it('все удары узнаются как E2, других полей не слышно', () => {
+    const heard = detect('samples/e2-01.wav')
+      .map((r) => r.heard)
+      .filter(Boolean);
+    expect(heard).toEqual(Array(7).fill('E2'));
+  });
+});
+
 describe.skipIf(!existsSync(FREE3))('свободная игра free-03', () => {
   it('до первого удара (3,4 с) гул не принимается за поле', () => {
     expect(detect(FREE3).filter((r) => r.t < 3.3 && r.heard)).toEqual([]);

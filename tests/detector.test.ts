@@ -60,12 +60,29 @@ describe('шаблоны', () => {
   it('шаблоны разных полей различимы', () => {
     const t = defaultTemplates(tongues, 48000);
     const ids = Object.keys(t);
-    expect(ids).toHaveLength(9);
+    // Девять полей и второй вариант звучания E2 (тихий удар).
+    expect(ids).toHaveLength(10);
+    expect(ids).toContain('0~1');
+    const field = (key: string) => key.split('~')[0];
     for (const a of ids) {
       for (const b of ids) {
-        if (a < b) expect(cosine(t[a], t[b])).toBeLessThan(0.9);
+        if (a < b && field(a) !== field(b)) expect(cosine(t[a], t[b])).toBeLessThan(0.9);
       }
     }
+  });
+
+  it('варианты звучания сводятся к одному полю', () => {
+    const sr = 48000;
+    const t = defaultTemplates(tongues, sr);
+    const e2 = tongues.find((x) => x.note === 'E2');
+    if (!e2?.altPartials) throw new Error('у E2 нет второго спектра');
+    const det = new HitDetector({ sampleRate: sr, templates: t });
+    // Тихий удар по E2: звучит второй спектр, а не основной.
+    const tone = renderTone(e2.freq, sr, sr, 0.2, 1, e2.altPartials[0]);
+    const samples = new Float32Array(sr * 2);
+    samples.set(tone, sr / 2);
+    const hits = det.push(samples).filter((e) => e.type === 'hit');
+    expect(hits.map((h) => (h.type === 'hit' ? h.tongues : []))).toEqual([[e2.id]]);
   });
 });
 

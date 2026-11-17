@@ -359,15 +359,29 @@ export function averageTemplates(features: ArrayLike<number>[]): Float64Array {
   return unit(out);
 }
 
-/** Шаблоны по номинальным частотам строя — работают без калибровки, но грубее. */
+/** Разделитель в ключе шаблона: «0~1» — ещё один вариант звучания поля «0». */
+export const VARIANT_MARK = '~';
+
+type Spectrum = readonly (readonly [number, number])[];
+
+/**
+ * Шаблоны по номинальным частотам строя — работают без калибровки, но грубее.
+ * У поля с altPartials шаблонов несколько: ключи «id», «id~1», «id~2»…
+ */
 export function defaultTemplates(
-  tongues: readonly { id: string; freq: number; partials?: readonly (readonly [number, number])[] }[],
+  tongues: readonly { id: string; freq: number; partials?: Spectrum; altPartials?: readonly Spectrum[] }[],
   sampleRate: number,
 ): Record<string, Float64Array> {
   const out: Record<string, Float64Array> = Object.create(null);
+  const template = (freq: number, spectrum?: Spectrum) => {
+    const tone = renderTone(freq, WINDOW, sampleRate, 1, 1, spectrum);
+    return toFeature(bandPowers((i) => tone[i], sampleRate));
+  };
   for (const t of tongues) {
-    const tone = renderTone(t.freq, WINDOW, sampleRate, 1, 1, t.partials);
-    out[t.id] = toFeature(bandPowers((i) => tone[i], sampleRate));
+    out[t.id] = template(t.freq, t.partials);
+    (t.altPartials ?? []).forEach((s, k) => {
+      out[`${t.id}${VARIANT_MARK}${k + 1}`] = template(t.freq, s);
+    });
   }
   return out;
 }
@@ -412,7 +426,8 @@ export class HitDetector {
   private readonly sr: number;
   private readonly ratio: number;
   private readonly ids: string[];
-  private readonly templates: ArrayLike<number>[];
+  /** Для каждого поля — основной шаблон и варианты звучания. */
+  private readonly templates: ArrayLike<number>[][];
   private readonly pairs: { a: number; b: number; t: Float64Array }[] = [];
   private readonly buf = new Float32Array(BUFFER);
   private written = 0;
@@ -462,11 +477,21 @@ export class HitDetector {
     for (let i = 0; i < FLUX_SPAN; i++) this.fluxRing.push(new Float32Array(this.fluxBins));
     this.fluxSpare = new Float32Array(this.fluxBins);
     this.fluxMax = new Float32Array(this.fluxBins);
-    this.ids = Object.keys(opts.templates);
-    this.templates = this.ids.map((id) => opts.templates[id]);
+    // Ключи «id~N» — варианты звучания того же поля: сводим их к одному полю.
+    const byId = new Map<string, ArrayLike<number>[]>();
+    for (const key of Object.keys(opts.templates)) {
+      const id = key.split(VARIANT_MARK)[0];
+      const list = byId.get(id) ?? [];
+      // Основной шаблон (ключ без метки) всегда первый: по нему строятся аккорды.
+      if (key === id) list.unshift(opts.templates[key]);
+      else list.push(opts.templates[key]);
+      byId.set(id, list);
+    }
+    this.ids = [...byId.keys()];
+    this.templates = this.ids.map((id) => byId.get(id) as ArrayLike<number>[]);
     for (let a = 0; a < this.ids.length; a++) {
       for (let b = a + 1; b < this.ids.length; b++) {
-        this.pairs.push({ a, b, t: averageTemplates([this.templates[a], this.templates[b]]) });
+        this.pairs.push({ a, b, t: averageTemplates([this.templates[a][0], this.templates[b][0]]) });
       }
     }
   }
@@ -663,7 +688,11 @@ export class HitDetector {
 
     const feature = toFeature(post, pre);
     const scores = this.templates
-      .map((t, i) => ({ i, id: this.ids[i], similarity: cosine(feature, t) }))
+      .map((variants, i) => {
+        let similarity = -Infinity;
+        for (const t of variants) similarity = Math.max(similarity, cosine(feature, t));
+        return { i, id: this.ids[i], similarity };
+      })
       .sort((a, b) => b.similarity - a.similarity);
     const best = scores.length ? scores[0].i : -1;
     const bestSim = scores.length ? Math.max(0, scores[0].similarity) : 0;

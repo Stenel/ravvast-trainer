@@ -48,22 +48,31 @@ export function parseScale(raw: unknown): Result<Scale> {
       if (!center && angle === null) {
         errors.push(`${where}: укажите "angle" в градусах или "position": "center".`);
       }
+      const isSpectrum = (v: unknown): v is [number, number][] =>
+        Array.isArray(v) &&
+        v.length > 0 &&
+        v.length <= 16 &&
+        v.every(
+          (p: unknown) =>
+            Array.isArray(p) &&
+            p.length === 2 &&
+            p.every((x) => typeof x === 'number' && Number.isFinite(x) && x > 0) &&
+            p[0] <= 32 &&
+            p[1] <= 4,
+        );
       let partials: [number, number][] | undefined;
       if (t.partials !== undefined) {
-        const ok =
-          Array.isArray(t.partials) &&
-          t.partials.length > 0 &&
-          t.partials.length <= 16 &&
-          t.partials.every(
-            (p: unknown) =>
-              Array.isArray(p) &&
-              p.length === 2 &&
-              p.every((x) => typeof x === 'number' && Number.isFinite(x) && x > 0) &&
-              p[0] <= 32 &&
-              p[1] <= 4,
-          );
-        if (ok) partials = (t.partials as [number, number][]).map(([r, g]) => [r, g]);
+        if (isSpectrum(t.partials)) partials = t.partials.map(([r, g]) => [r, g]);
         else errors.push(`${where}: "partials" должен быть списком пар [гармоника, амплитуда].`);
+      }
+      let altPartials: [number, number][][] | undefined;
+      if (t.altPartials !== undefined) {
+        const alt: unknown = t.altPartials;
+        if (Array.isArray(alt) && alt.length > 0 && alt.length <= 4 && alt.every(isSpectrum)) {
+          altPartials = alt.map((s) => s.map(([r, g]) => [r, g]));
+        } else {
+          errors.push(`${where}: "altPartials" должен быть списком спектров (не больше четырёх).`);
+        }
       }
       tongues.push({
         id: tid,
@@ -72,6 +81,7 @@ export function parseScale(raw: unknown): Result<Scale> {
         center,
         angle: angle ?? 0,
         ...(partials ? { partials } : {}),
+        ...(altPartials ? { altPartials } : {}),
       });
     });
   }

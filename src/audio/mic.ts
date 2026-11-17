@@ -1,4 +1,10 @@
-import { BANDS, type DetectorEvent, HitDetector, defaultTemplates } from '../core/detector';
+import {
+  BANDS,
+  type DetectorEvent,
+  HitDetector,
+  VARIANT_MARK,
+  defaultTemplates,
+} from '../core/detector';
 import type { KeyValueStore } from '../core/progress';
 import { isRecord } from '../core/scale';
 import type { Scale } from '../core/types';
@@ -289,9 +295,21 @@ export class MicInput {
     if (!this.ctx) return;
     const sr = this.ctx.sampleRate;
     const c = this.loadCalibration();
+    const defaults = defaultTemplates(this.scale.tongues, sr);
+    let templates: Record<string, ArrayLike<number>> = defaults;
+    if (c && c.sampleRate === sr) {
+      // Откалиброванное поле узнаём только по его записи; у остальных остаются встроенные
+      // шаблоны вместе с вариантами звучания.
+      templates = {};
+      for (const key of Object.keys(defaults)) {
+        const id = key.split(VARIANT_MARK)[0];
+        if (key === id) templates[key] = c.templates[id] ?? defaults[key];
+        else if (!c.calibrated.includes(id)) templates[key] = defaults[key];
+      }
+    }
     this.detector = new HitDetector({
       sampleRate: sr,
-      templates: c && c.sampleRate === sr ? c.templates : defaultTemplates(this.scale.tongues, sr),
+      templates,
       ratio: RATIO[this.sensitivity],
       noiseFactor: NOISE_FACTOR[this.sensitivity],
     });
