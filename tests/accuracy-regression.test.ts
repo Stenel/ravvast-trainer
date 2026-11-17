@@ -134,6 +134,13 @@ describe.skipIf(!existsSync(SAMPLE2) || !existsSync(LABELS2))('размечен�
   });
 });
 
+describe.skipIf(!existsSync('samples/free-02.wav'))('свободная игра free-02', () => {
+  it('тихий удар по E2 (почти один обертон 495 Гц) узнаётся', () => {
+    const hit = detect('samples/free-02.wav').find((r) => Math.abs(r.t - 1.9) < 0.15);
+    expect(hit?.heard).toBe('E2');
+  });
+});
+
 describe.skipIf(!existsSync(FREE3))('свободная игра free-03', () => {
   it('до первого удара (3,4 с) гул не принимается за поле', () => {
     expect(detect(FREE3).filter((r) => r.t < 3.3 && r.heard)).toEqual([]);
