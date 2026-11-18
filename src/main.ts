@@ -75,6 +75,9 @@ try {
     store: safeStore,
     mic,
     home: () => {
+      // Сначала закрываем экран: он может дописывать отладочную запись с микрофона.
+      current?.destroy();
+      current = null;
       // На главном экране микрофон не нужен — не слушаем без необходимости.
       if (mic.status === 'on' || mic.status === 'starting') mic.stop();
       show(homeScreen(ctx), false);

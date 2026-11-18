@@ -1,4 +1,11 @@
-import { voicePartials } from '../core/tone';
+import { TICK_ACCENT_HZ, TICK_HZ, TICK_SEC, voicePartials } from '../core/tone';
+
+const TICK_VOLUME = 0.6;
+/** Плавная огибающая тика: без резких краёв у щелчка нет низких частот. */
+const TICK_CURVE = Float32Array.from(
+  { length: 33 },
+  (_, i) => TICK_VOLUME * (0.5 - 0.5 * Math.cos((2 * Math.PI * i) / 32)),
+);
 
 /**
  * Синтез звука поля по измеренному спектру настоящего инструмента: неравномерные обертоны,
@@ -73,6 +80,27 @@ export class Synth {
     const state: string = this.ctx.state;
     if (state !== 'running' && state !== 'closed') void this.ctx.resume().catch(() => undefined);
     return this.ctx;
+  }
+
+  /**
+   * Тик метронома через delaySec секунд. Ставится по часам звука и с поправкой на задержку
+   * вывода, идёт мимо реверберации — щелчок остаётся коротким.
+   */
+  tick(delaySec = 0, accent = false): void {
+    const ctx = this.ensure();
+    if (!ctx) return;
+    const latency = ctx.outputLatency || ctx.baseLatency || 0;
+    const t0 = ctx.currentTime + Math.max(0, delaySec - latency);
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = 'sine';
+    osc.frequency.value = accent ? TICK_ACCENT_HZ : TICK_HZ;
+    gain.gain.value = 0;
+    gain.gain.setValueCurveAtTime(TICK_CURVE, t0, TICK_SEC);
+    osc.connect(gain).connect(ctx.destination);
+    osc.start(t0);
+    osc.stop(t0 + TICK_SEC + 0.01);
+    osc.onended = () => gain.disconnect();
   }
 
   play(tongue: SynthTongue, velocity = 1): void {

@@ -6,6 +6,13 @@ export const PARTIALS = [
 ] as const;
 
 export const ATTACK_SEC = 0.006;
+
+// Тик метронома: короткий высокий щелчок с плавной огибающей. Он целиком лежит выше
+// входного фильтра распознавателя, поэтому микрофон его «не слышит».
+export const TICK_HZ = 5500;
+/** Первая доля такта — выше. */
+export const TICK_ACCENT_HZ = 7000;
+export const TICK_SEC = 0.015;
 /** Во сколько раз падает амплитуда за время decay. */
 const DECAY_FLOOR = 1e-4;
 

@@ -56,6 +56,12 @@ const ECHO_MAX_NOVELTY = 0.8;
 /** Звук не громче фона на столько дБ и с долей нового ниже порога ударом не считается. */
 const FAINT_MARGIN_DB = 8;
 const FAINT_MAX_NOVELTY = 0.6;
+/**
+ * Всё, что выше, на входе срезается (фильтр 8-го порядка): у полей там нет ничего нужного,
+ * а тик метронома (5,5 кГц и выше) из динамика иначе принимался бы за начало удара.
+ */
+export const INPUT_LOWPASS_HZ = 2200;
+const LOWPASS_Q = [0.50979558, 0.60134489, 0.89997622, 2.56291545];
 const BUFFER = 1 << 17;
 const MASK = BUFFER - 1;
 
@@ -466,9 +472,19 @@ export class HitDetector {
   private pending: Pending[] = [];
   private nextId = 1;
   private lastStrike: { frame: number; levelDb: number } | null = null;
+  /** Звенья входного фильтра: по пять коэффициентов (b0, b1, b2, a1, a2) и по два состояния. */
+  private readonly lp = new Float64Array(LOWPASS_Q.length * 5);
+  private readonly lpState = new Float64Array(LOWPASS_Q.length * 2);
 
   constructor(opts: DetectorOptions) {
     this.sr = opts.sampleRate;
+    const w0 = (2 * Math.PI * Math.min(INPUT_LOWPASS_HZ, this.sr * 0.45)) / this.sr;
+    LOWPASS_Q.forEach((q, k) => {
+      const alpha = Math.sin(w0) / (2 * q);
+      const a0 = 1 + alpha;
+      const b1 = (1 - Math.cos(w0)) / a0;
+      this.lp.set([b1 / 2, b1, b1 / 2, (-2 * Math.cos(w0)) / a0, (1 - alpha) / a0], k * 5);
+    });
     this.ratio = opts.ratio ?? 1.7;
     this.noiseFactor = opts.noiseFactor ?? 8;
     const df = this.sr / FLUX_WINDOW;
@@ -498,8 +514,17 @@ export class HitDetector {
 
   push(samples: ArrayLike<number>): DetectorEvent[] {
     const events: DetectorEvent[] = [];
+    const c = this.lp;
+    const s = this.lpState;
     for (let i = 0; i < samples.length; i++) {
-      this.buf[this.written & MASK] = samples[i];
+      let y = samples[i];
+      for (let k = 0, j = 0; k < c.length; k += 5, j += 2) {
+        const x = y;
+        y = c[k] * x + s[j];
+        s[j] = c[k + 1] * x - c[k + 3] * y + s[j + 1];
+        s[j + 1] = c[k + 2] * x - c[k + 4] * y;
+      }
+      this.buf[this.written & MASK] = y;
       this.written++;
       if (this.written - this.hopStart === HOP) {
         this.processHop();

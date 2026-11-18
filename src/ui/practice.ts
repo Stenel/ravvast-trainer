@@ -13,6 +13,7 @@ import {
   storedDifficulty,
   topBar,
 } from './dom';
+import { type DebugLog, saveDebugLog, startDebugLog } from './debuglog';
 import { createInstrument } from './instrument';
 
 export function practiceScreen(ctx: AppCtx, comp: Composition): Screen {
@@ -25,9 +26,25 @@ export function practiceScreen(ctx: AppCtx, comp: Composition): Screen {
   let toastTimer = 0;
   let justCompleted = false;
 
+  const openLog = () =>
+    startDebugLog(ctx, 'practice', {
+      composition: comp.id,
+      title: comp.title,
+      bpm: comp.bpm,
+      steps: steps.length,
+    });
+  let log: DebugLog | null = openLog();
+  const finishLog = () => log?.finish(() => ({ step: session.index + 1, wait, tempo }));
+
   /** Нажатие поля (с экрана или с микрофона) в режиме ожидания. Возвращает, верная ли нота. */
   function press(id: string): boolean {
+    const step = session.index;
     const r = session.press(id);
+    log?.mark('press', performance.now(), {
+      note: noteOf(ctx.scale, id),
+      step: step + 1,
+      correct: r.correct,
+    });
     inst.flash(id, r.correct ? 'good' : 'wrong');
     if (r.completed) {
       justCompleted = true;
@@ -195,6 +212,7 @@ export function practiceScreen(ctx: AppCtx, comp: Composition): Screen {
     for (const t of steps[session.index].tongues) {
       // Демонстрация: звучит всегда, микрофон в этом режиме не учитывается.
       playTongue(ctx, t, 0.8);
+      log?.mark('demo', performance.now(), { note: noteOf(ctx.scale, t), step: session.index + 1 });
       inst.flash(t, 'good');
     }
     render();
@@ -282,6 +300,22 @@ export function practiceScreen(ctx: AppCtx, comp: Composition): Screen {
         },
         'Играть этот отрезок с разгоном темпа',
       ),
+      log
+        ? h(
+            'button',
+            {
+              class: 'btn wide-btn',
+              type: 'button',
+              onclick: () => {
+                // Сохраняем записанное и сразу начинаем новую запись.
+                finishLog();
+                saveDebugLog();
+                log = openLog();
+              },
+            },
+            'Сохранить отчёт и запись (отладка)',
+          )
+        : '',
     ),
   );
 
@@ -291,6 +325,7 @@ export function practiceScreen(ctx: AppCtx, comp: Composition): Screen {
     el,
     destroy() {
       stop();
+      finishLog();
       unsubscribeMic();
       window.clearTimeout(toastTimer);
       inst.destroy();

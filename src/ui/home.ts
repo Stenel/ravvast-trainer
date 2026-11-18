@@ -16,7 +16,9 @@ import {
   saveImported,
 } from '../data';
 import { type AppCtx, type Screen, h, noteOf, storeDifficulty, storedDifficulty } from './dom';
+import { DEBUG_CAPTURE_SECONDS, debugSaveButton } from './debuglog';
 import { canInstall, onInstallChange, promptInstall } from './install';
+import { debugEnabled, setDebugEnabled, setTickEnabled, tickEnabled } from './settings';
 
 const MAX_FILE_BYTES = 1_000_000;
 const MAX_BACKUP_BYTES = 4_000_000;
@@ -389,6 +391,17 @@ export function homeScreen(ctx: AppCtx): Screen {
         );
   }
 
+  const tickInput = h('input', {
+    type: 'checkbox',
+    checked: tickEnabled(ctx),
+    onchange: () => setTickEnabled(ctx, tickInput.checked),
+  });
+  const debugInput = h('input', {
+    type: 'checkbox',
+    checked: debugEnabled(ctx),
+    onchange: () => setDebugEnabled(ctx, debugInput.checked),
+  });
+
   // --- резервная копия: телефон может очистить данные сайта ---
   const backupMsg = h('p', { class: 'meta', role: 'status' });
   const backupInput = h('input', {
@@ -539,7 +552,20 @@ export function homeScreen(ctx: AppCtx): Screen {
     fileInput,
     message,
     h('h2', {}, 'Упражнения'),
+    h('label', { class: 'control check' }, tickInput, 'Тик метронома в упражнениях'),
     drillList,
+    h(
+      'details',
+      { class: 'format', open: debugEnabled(ctx) },
+      h('summary', {}, 'Отладка'),
+      h('label', { class: 'control check' }, debugInput, 'Записывать звук и отчёт в игре и разучивании'),
+      h(
+        'p',
+        { class: 'meta' },
+        `Пока галочка стоит, каждый проход пишется с микрофона (до ${DEBUG_CAPTURE_SECONDS / 60} минут) вместе с тем, что услышало распознавание. Кнопка сохранения появляется в итогах прохода, на экране разучивания и здесь. Запись хранится только до закрытия страницы и никуда не отправляется.`,
+      ),
+      debugSaveButton(),
+    ),
     h(
       'details',
       { class: 'format' },

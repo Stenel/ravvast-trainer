@@ -7,7 +7,7 @@ import {
   defaultTemplates,
 } from '../src/core/detector';
 import { parseScale } from '../src/core/scale';
-import { renderTone } from '../src/core/tone';
+import { TICK_ACCENT_HZ, TICK_HZ, TICK_SEC, renderTone } from '../src/core/tone';
 import pygmy from '../scales/e-low-pygmy.json';
 
 const ps = parseScale(pygmy);
@@ -260,5 +260,34 @@ describe.each([44100, 48000])('HitDetector при %i Гц', (sr) => {
       run(detector(sr, templates), mix(sr, 0.2 + order.length * 0.4 + 0.5, strikes, 0.0005, detune)),
     );
     expect(hits.map((h) => h.tongues.join('+'))).toEqual(order);
+  });
+});
+
+describe('тик метронома', () => {
+  const sr = 48000;
+  /** Короткий высокий щелчок, как у метронома в упражнениях. */
+  function addTick(out: Float32Array, t: number, freq = TICK_HZ, amp = 0.4): void {
+    const start = Math.round(t * sr);
+    const len = Math.round(TICK_SEC * sr);
+    for (let i = 0; i < len && start + i < out.length; i++) {
+      const env = 0.5 - 0.5 * Math.cos((2 * Math.PI * i) / len);
+      out[start + i] += amp * env * Math.sin((2 * Math.PI * freq * i) / sr);
+    }
+  }
+
+  it('сам тик ударом не считается', () => {
+    const samples = mix(sr, 4, []);
+    for (let t = 0.5; t < 3.8; t += 0.5) addTick(samples, t, t % 2 < 0.01 ? TICK_ACCENT_HZ : TICK_HZ);
+    expect(hitsOf(run(detector(sr), samples))).toHaveLength(0);
+  });
+
+  it('тик перед ударом не сдвигает время удара', () => {
+    const strikeAt = 1.06;
+    const samples = mix(sr, 2, [{ id: '0', t: strikeAt }]);
+    addTick(samples, 1.0);
+    const hits = known(run(detector(sr), samples));
+    expect(hits).toHaveLength(1);
+    expect(hits[0].tongues).toEqual(['0']);
+    expect(Math.abs(hits[0].frame / sr - strikeAt)).toBeLessThan(0.02);
   });
 });

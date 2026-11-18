@@ -8,7 +8,9 @@ import { RAMP_START, nextTempo, sliceComposition, weakestWindow } from '../core/
 import { dayKey } from '../core/history';
 import { appendHistory } from '../data';
 import { type AppCtx, type PlayOptions, type Screen, h, noteOf, playTap, topBar } from './dom';
+import { debugSaveButton, startDebugLog } from './debuglog';
 import { createInstrument } from './instrument';
+import { tickEnabled } from './settings';
 
 const NS = 'http://www.w3.org/2000/svg';
 const LEAD_IN = 1.2;
@@ -28,6 +30,10 @@ const WEAK_SPAN_BEATS = 8;
 /** Точность прохода, с которой цикл прибавляет темп. */
 const RAMP_PASS = 0.9;
 const LOOP_PAUSE_MS = 3500;
+/** За сколько секунд до доли тик ставится в очередь звука. */
+const TICK_AHEAD = 0.3;
+/** Размер такта для тика: первая доля звучит выше. */
+const TICK_BAR = 4;
 
 export function gameScreen(
   ctx: AppCtx,
@@ -52,6 +58,53 @@ export function gameScreen(
   let spawn = 0;
   const rings = new Map<number, SVGCircleElement>();
   const now = () => (performance.now() - startAt) / 1000;
+
+  // В упражнениях доли отбивает тик метронома. Он лежит выше слышимого распознавателем
+  // диапазона, поэтому с микрофоном ударом не считается.
+  const ticking = kind === 'drill' && tickEnabled(ctx);
+  let nextTick = -TICK_BAR;
+
+  const log = startDebugLog(ctx, 'game', {
+    composition: comp.id,
+    title: comp.title,
+    parent: parent.id,
+    bpm: comp.bpm,
+    tempo,
+    kind,
+    loop: opts.loop === true,
+    difficulty,
+    perfectMs: Math.round(cfg.perfect * 1000),
+    goodMs: Math.round(cfg.good * 1000),
+    tick: ticking,
+  });
+
+  /** Завершает отладочную запись: что ожидалось и как сыграна каждая нота. */
+  function finishLog(): void {
+    log?.finish((sec) => ({
+      score: session.score,
+      accuracy: Math.round(session.accuracy * 1000) / 1000,
+      notes: notes.map((n, i) => {
+        const off = session.offset(i);
+        return {
+          note: noteOf(ctx.scale, n.tongue),
+          expectedSec: sec(startAt + n.time * 1000),
+          ...(n.dyn ? { dyn: n.dyn } : {}),
+          state: session.state(i),
+          offsetMs: off === null ? null : Math.round(off * 1000),
+        };
+      }),
+    }));
+  }
+
+  type HitResult = ReturnType<GameSession['hit']>;
+  function logJudge(source: string, timeMs: number, id: string, r: HitResult): void {
+    log?.mark('judge', timeMs, {
+      source,
+      note: noteOf(ctx.scale, id),
+      grade: r.grade,
+      ...(r.grade === 'stray' ? {} : { index: r.index, offsetMs: Math.round(r.offset * 1000) }),
+    });
+  }
 
   const scoreEl = h('strong', {}, '0');
   const comboEl = h('strong', {}, '0');
@@ -162,6 +215,7 @@ export function gameScreen(
     }
     for (const id of heard) {
       const r = session.hit(id, t);
+      logJudge(ev.tongues.includes(id) ? 'mic' : 'chord', ev.timeMs, id, r);
       if (r.grade === 'stray') {
         inst.flash(id, 'wrong');
         showJudge('Мимо', 'miss');
@@ -194,6 +248,7 @@ export function gameScreen(
       return;
     }
     const r = session.hit(id, now());
+    logJudge('tap', performance.now(), id, r);
     if (r.grade === 'stray') {
       inst.flash(id, 'wrong');
       showJudge('Мимо', 'miss');
@@ -210,6 +265,7 @@ export function gameScreen(
     if (done || !session.finished) return;
     done = true;
     cancelAnimationFrame(raf);
+    finishLog();
     // Результат сохраняем сразу, чтобы он не пропал при быстром выходе с экрана.
     // Рекорды — только за целую композицию: проход фрагмента или упражнения не должен
     // помечать её пройденной.
@@ -259,6 +315,19 @@ export function gameScreen(
       if (judgeEl.classList.contains('count')) {
         judgeEl.className = 'judge';
         judgeEl.textContent = '';
+      }
+    }
+    if (ticking) {
+      const end = notes[notes.length - 1].time + 1e-6;
+      while (nextTick * beatSec - t < TICK_AHEAD && nextTick * beatSec <= end) {
+        const at = nextTick * beatSec;
+        // Доли, которые уже прошли (пауза, короткий отсчёт), не догоняем.
+        if (at - t > -0.02) {
+          const accent = ((nextTick % TICK_BAR) + TICK_BAR) % TICK_BAR === 0;
+          ctx.synth.tick(Math.max(0, at - t), accent);
+          log?.mark('tick', startAt + at * 1000, { accent });
+        }
+        nextTick++;
       }
     }
     const phase = (((t / beatSec) % 1) + 1) % 1;
@@ -477,6 +546,8 @@ export function gameScreen(
               : h('button', { class: 'btn primary', type: 'button', onclick: go }, 'Дальше'),
             h('button', { class: 'btn', type: 'button', onclick: ctx.home }, 'Стоп'),
           ),
+          // Сохранение останавливает автопродолжение: иначе запись ушла бы со следующим проходом.
+          debugSaveButton(() => window.clearTimeout(loopTimer)),
         ),
       ),
     );
@@ -555,6 +626,7 @@ export function gameScreen(
               )
             : '',
           ...qualityRows,
+          debugSaveButton(),
           passed
             ? ''
             : h(
@@ -609,6 +681,8 @@ export function gameScreen(
       ctx.mic.enabled
         ? 'Ударяйте по полю, когда белое кольцо сойдётся с краем и поле загорится жёлтым. Микрофон слушает.'
         : 'Касайтесь поля, когда белое кольцо сойдётся с краем и поле загорится жёлтым.',
+      ticking ? ' Доли отбивает тик.' : '',
+      log ? (ctx.mic.enabled ? ' Отладка: идёт запись.' : ' Отладка: пишется отчёт без звука.') : '',
     ),
     overlayHost,
   );
@@ -620,6 +694,7 @@ export function gameScreen(
     el,
     destroy() {
       done = true;
+      finishLog();
       cancelAnimationFrame(raf);
       window.clearTimeout(finishTimer);
       window.clearTimeout(judgeTimer);
