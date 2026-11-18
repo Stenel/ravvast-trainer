@@ -90,7 +90,8 @@ try {
       void mic.start();
       show(accuracyScreen(ctx));
     },
-    play: (comp, difficulty) => withMic(() => show(gameScreen(ctx, comp, difficulty)))(),
+    play: (comp, difficulty, opts) =>
+      withMic(() => show(gameScreen(ctx, comp, difficulty, opts)))(),
     practice: (comp) => withMic(() => show(practiceScreen(ctx, comp)))(),
   };
   for (const type of ['pointerup', 'touchend', 'click', 'keydown']) {

@@ -2,7 +2,17 @@ import { PracticeSession, buildSteps, stepSeconds } from '../core/practice';
 import { markCompleted } from '../core/progress';
 import type { Composition } from '../core/types';
 import { MUTED_RATIO, clarityPercent } from '../core/quality';
-import { type AppCtx, type Screen, h, noteOf, playTap, playTongue, topBar } from './dom';
+import { RAMP_START, sliceComposition } from '../core/fragment';
+import {
+  type AppCtx,
+  type Screen,
+  h,
+  noteOf,
+  playTap,
+  playTongue,
+  storedDifficulty,
+  topBar,
+} from './dom';
 import { createInstrument } from './instrument';
 
 export function practiceScreen(ctx: AppCtx, comp: Composition): Screen {
@@ -251,6 +261,27 @@ export function practiceScreen(ctx: AppCtx, comp: Composition): Screen {
         toInput,
       ),
       h('div', { class: 'row' }, playBtn, restartBtn),
+      h(
+        'button',
+        {
+          class: 'btn wide-btn',
+          type: 'button',
+          onclick: () => {
+            // Выбранный цикл (или вся композиция) играется на время, темп растёт сам.
+            const loop = session.loop;
+            const from = steps[loop ? loop.from : 0];
+            const last = loop ? loop.to : steps.length - 1;
+            const end = steps[last + 1]?.beat ?? steps[last].beat + 1;
+            ctx.play(sliceComposition(comp, from.beat, end), storedDifficulty(ctx), {
+              tempo: RAMP_START,
+              loop: true,
+              kind: 'fragment',
+              parent: comp,
+            });
+          },
+        },
+        'Играть этот отрезок с разгоном темпа',
+      ),
     ),
   );
 

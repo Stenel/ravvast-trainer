@@ -3,7 +3,10 @@ import { DIFFICULTIES, type Difficulty, GameSession, multiplier } from '../core/
 import { PASS_ACCURACY, recordGame } from '../core/progress';
 import type { Composition } from '../core/types';
 import { type HitQuality, summarizeQuality } from '../core/quality';
-import { type AppCtx, type Screen, h, noteOf, playTap, topBar } from './dom';
+import { RAMP_START, nextTempo, sliceComposition, weakestWindow } from '../core/fragment';
+import { dayKey } from '../core/history';
+import { appendHistory } from '../data';
+import { type AppCtx, type PlayOptions, type Screen, h, noteOf, playTap, topBar } from './dom';
 import { createInstrument } from './instrument';
 
 const NS = 'http://www.w3.org/2000/svg';
@@ -15,9 +18,24 @@ const LATENCY_HINT_MS = 15;
 /** Ноты ближе этого (в секундах) считаются одним аккордом. */
 const CHORD_SPREAD = 0.03;
 
-export function gameScreen(ctx: AppCtx, comp: Composition, difficulty: Difficulty): Screen {
+/** Длина «трудного места», которое предлагается отработать после игры, в долях. */
+const WEAK_SPAN_BEATS = 8;
+/** Точность прохода, с которой цикл прибавляет темп. */
+const RAMP_PASS = 0.9;
+const LOOP_PAUSE_MS = 3500;
+
+export function gameScreen(
+  ctx: AppCtx,
+  comp: Composition,
+  difficulty: Difficulty,
+  opts: PlayOptions = {},
+): Screen {
   const cfg = DIFFICULTIES[difficulty];
-  const notes = toTimedNotes(comp);
+  const tempo = opts.tempo ?? 1;
+  const kind = opts.kind ?? 'game';
+  const parent = opts.parent ?? comp;
+  const notes = toTimedNotes(comp, tempo);
+  let loopTimer = 0;
   const session = new GameSession(notes, difficulty);
 
   let startAt = performance.now() + (cfg.approach + LEAD_IN) * 1000;
@@ -174,11 +192,35 @@ export function gameScreen(ctx: AppCtx, comp: Composition, difficulty: Difficult
     done = true;
     cancelAnimationFrame(raf);
     // Результат сохраняем сразу, чтобы он не пропал при быстром выходе с экрана.
-    const { isRecord } = recordGame(ctx.store, comp.id, difficulty, session.score, session.accuracy);
-    finishTimer = window.setTimeout(() => showResults(isRecord), 700);
+    // Рекорды — только за целую композицию: проход фрагмента или упражнения не должен
+    // помечать её пройденной.
+    const isRecord =
+      kind === 'game'
+        ? recordGame(ctx.store, comp.id, difficulty, session.score, session.accuracy).isRecord
+        : false;
+    const hits: Record<string, number> = Object.create(null);
+    const misses: Record<string, number> = Object.create(null);
+    notes.forEach((n, i) => {
+      const bucket = session.state(i) === 'miss' ? misses : hits;
+      bucket[n.tongue] = (bucket[n.tongue] ?? 0) + 1;
+    });
+    appendHistory(ctx.store, {
+      day: dayKey(new Date()),
+      compId: parent.id,
+      kind,
+      accuracy: session.accuracy,
+      notes: notes.length,
+      seconds: Math.max(0, Math.round(now())),
+      hits,
+      misses,
+    });
+    finishTimer = window.setTimeout(
+      () => (opts.loop ? showLoopResult() : showResults(isRecord)),
+      700,
+    );
   }
 
-  const beatSec = 60 / comp.bpm;
+  const beatSec = 60 / (comp.bpm * tempo);
   let countShown = 0;
 
   function frame(): void {
@@ -272,7 +314,107 @@ export function gameScreen(ctx: AppCtx, comp: Composition, difficulty: Difficult
 
   const overlayHost = h('div', {});
 
+  /** Ноты, сыгранные не идеально: пропуск или удар за пределами окна «Идеально». */
+  const isBad = (i: number) =>
+    session.state(i) === 'miss' || Math.abs(session.offset(i) ?? 0) > cfg.perfect;
+
+  /** Самый трудный отрезок композиции — если ошибок там хотя бы две. */
+  function weakSpot(): { fromBeat: number; toBeat: number; bad: number } | null {
+    const beats = comp.notes.map((n) => n.beat);
+    const length = (beats[beats.length - 1] ?? 0) - (beats[0] ?? 0);
+    if (length <= WEAK_SPAN_BEATS) return null;
+    const w = weakestWindow(
+      beats,
+      notes.map((_, i) => isBad(i)),
+      WEAK_SPAN_BEATS,
+    );
+    return w && w.bad >= 2 ? w : null;
+  }
+
+  /** Лента прохода: каждая нота — точка; выше линии — раньше срока, ниже — позже. */
+  function timeline(weak: { fromBeat: number; toBeat: number } | null): HTMLElement {
+    const total = notes[notes.length - 1]?.time || 1;
+    const pct = (x: number) => `${(Math.min(1, Math.max(0, x)) * 94 + 3).toFixed(1)}%`;
+    const box = h('div', {
+      class: 'timeline',
+      role: 'img',
+      'aria-label': 'Ноты по времени: выше линии — раньше срока, ниже — позже, красные — пропуски',
+    });
+    if (weak) {
+      const band = h('div', { class: 'tl-weak' });
+      const from = (weak.fromBeat * beatSec) / total;
+      const to = (weak.toBeat * beatSec) / total;
+      band.style.left = pct(from);
+      band.style.right = `${(100 - parseFloat(pct(to))).toFixed(1)}%`;
+      box.append(band);
+    }
+    notes.forEach((n, i) => {
+      const state = session.state(i);
+      const off = session.offset(i);
+      const y = state === 'miss' || off === null ? 0 : Math.max(-1, Math.min(1, off / cfg.good));
+      const dot = h('span', { class: `tl-dot ${state}` });
+      dot.style.left = pct(n.time / total);
+      dot.style.top = `${(50 + y * 40).toFixed(1)}%`;
+      box.append(dot);
+    });
+    return h(
+      'div',
+      {},
+      box,
+      h('p', { class: 'meta tl-legend' }, 'Выше линии — рано, ниже — поздно, красные — пропуски.'),
+    );
+  }
+
+  /** Итог прохода в цикле: темп растёт после чистой игры, цикл идёт сам. */
+  function showLoopResult(): void {
+    const acc = session.accuracy;
+    const next = nextTempo(tempo, acc, { pass: RAMP_PASS });
+    const mastered = tempo >= 1 && acc >= RAMP_PASS;
+    const pc = (x: number) => `${Math.round(x * 100)}%`;
+    const again = (t: number) => ctx.play(comp, difficulty, { ...opts, tempo: t });
+    const go = () => again(next);
+    if (!mastered) loopTimer = window.setTimeout(go, LOOP_PAUSE_MS);
+    overlayHost.replaceChildren(
+      h(
+        'div',
+        { class: 'modal', role: 'dialog', 'aria-label': 'Итог прохода' },
+        h(
+          'div',
+          { class: 'modal-card' },
+          h('h2', {}, mastered ? 'Освоено на полном темпе!' : `Темп ${pc(tempo)}: точность ${pc(acc)}`),
+          timeline(null),
+          h(
+            'p',
+            { class: 'hint' },
+            mastered
+              ? `Точность ${pc(acc)}. Можно играть композицию целиком.`
+              : next > tempo
+                ? `Чисто — ускоряемся до ${pc(next)}.`
+                : `Для следующего темпа нужно ${pc(RAMP_PASS)} — повторяем на ${pc(tempo)}.`,
+          ),
+          h(
+            'div',
+            { class: 'row' },
+            mastered
+              ? h(
+                  'button',
+                  {
+                    class: 'btn primary',
+                    type: 'button',
+                    onclick: () => (parent === comp ? again(1) : ctx.play(parent, difficulty)),
+                  },
+                  parent === comp ? 'Ещё раз' : 'Сыграть целиком',
+                )
+              : h('button', { class: 'btn primary', type: 'button', onclick: go }, 'Дальше'),
+            h('button', { class: 'btn', type: 'button', onclick: ctx.home }, 'Стоп'),
+          ),
+        ),
+      ),
+    );
+  }
+
   function showResults(isRecord: boolean): void {
+    const weak = kind === 'game' ? weakSpot() : null;
     const pct = Math.round(session.accuracy * 100);
     const passed = session.accuracy >= PASS_ACCURACY;
     const row = (label: string, value: string) =>
@@ -324,6 +466,24 @@ export function gameScreen(ctx: AppCtx, comp: Composition, difficulty: Difficult
           row('Идеально', String(session.counts.perfect)),
           row('Хорошо', String(session.counts.good)),
           row('Пропущено', String(session.counts.miss)),
+          timeline(weak),
+          weak
+            ? h(
+                'button',
+                {
+                  class: 'btn wide-btn',
+                  type: 'button',
+                  onclick: () =>
+                    ctx.play(sliceComposition(comp, weak.fromBeat, weak.toBeat), difficulty, {
+                      tempo: RAMP_START,
+                      loop: true,
+                      kind: 'fragment',
+                      parent: comp,
+                    }),
+                },
+                `Отработать трудное место (неточных нот: ${weak.bad})`,
+              )
+            : '',
           ...qualityRows,
           passed
             ? ''
@@ -337,7 +497,11 @@ export function gameScreen(ctx: AppCtx, comp: Composition, difficulty: Difficult
             { class: 'row' },
             h(
               'button',
-              { class: 'btn primary', type: 'button', onclick: () => ctx.play(comp, difficulty) },
+              {
+                class: 'btn primary',
+                type: 'button',
+                onclick: () => ctx.play(comp, difficulty, opts),
+              },
               'Ещё раз',
             ),
             h('button', { class: 'btn', type: 'button', onclick: ctx.home }, 'К списку'),
@@ -350,7 +514,15 @@ export function gameScreen(ctx: AppCtx, comp: Composition, difficulty: Difficult
   const el = h(
     'div',
     { class: 'screen' },
-    topBar(comp.title, ctx.home, h('span', { class: 'badge' }, cfg.label)),
+    topBar(
+      comp.title,
+      ctx.home,
+      h(
+        'span',
+        { class: 'badge' },
+        opts.loop || tempo !== 1 ? `темп ${Math.round(tempo * 100)}%` : cfg.label,
+      ),
+    ),
     h('div', { class: 'progress' }, progressEl),
     h(
       'div',
@@ -381,6 +553,7 @@ export function gameScreen(ctx: AppCtx, comp: Composition, difficulty: Difficult
       cancelAnimationFrame(raf);
       window.clearTimeout(finishTimer);
       window.clearTimeout(judgeTimer);
+      window.clearTimeout(loopTimer);
       document.removeEventListener('visibilitychange', onVisibility);
       unsubscribeMic();
       inst.destroy();

@@ -116,6 +116,14 @@ describe('GameSession', () => {
   });
 
   it('пустая сессия сразу завершена с нулевой точностью', () => {
+    const kept = new GameSession([n('1', 1), n('2', 2), n('3', 3)], 'normal');
+    kept.hit('1', 0.95);
+    kept.hit('2', 2.1);
+    kept.update(10);
+    // Отклонение каждой ноты запоминается: минус — раньше, плюс — позже, пропуск — null.
+    expect(kept.offset(0)).toBeCloseTo(-0.05);
+    expect(kept.offset(1)).toBeCloseTo(0.1);
+    expect(kept.offset(2)).toBeNull();
     const s = new GameSession([], 'easy');
     expect(s.finished).toBe(true);
     expect(s.accuracy).toBe(0);

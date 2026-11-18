@@ -1,6 +1,7 @@
 import { parseComposition } from './core/composition';
+import { type SessionEntry, addSession, parseHistory } from './core/history';
 import type { KeyValueStore } from './core/progress';
-import { parseScale } from './core/scale';
+import { isRecord, parseScale } from './core/scale';
 import type { Composition, Scale } from './core/types';
 
 const scaleFiles = import.meta.glob('../scales/*.json', { eager: true, import: 'default' });
@@ -96,6 +97,74 @@ export function freeImportedId(store: KeyValueStore, id: string): string {
     const candidate = `${id} (${n})`;
     if (!taken.has(candidate)) return candidate;
   }
+}
+
+const HISTORY_KEY = 'ravvast-trainer:history:v1';
+
+/** Журнал занятий: по нему считаются серия дней, время и слабые поля. */
+export function loadHistory(store: KeyValueStore): SessionEntry[] {
+  try {
+    return parseHistory(JSON.parse(store.getItem(HISTORY_KEY) ?? '[]'));
+  } catch {
+    return [];
+  }
+}
+
+export function appendHistory(store: KeyValueStore, entry: SessionEntry): void {
+  try {
+    store.setItem(HISTORY_KEY, JSON.stringify(addSession(loadHistory(store), entry)));
+  } catch {
+    // Хранилище недоступно или переполнено: занятие просто не попадёт в журнал.
+  }
+}
+
+const STORAGE_PREFIX = 'ravvast-trainer:';
+const MAX_BACKUP_CHARS = 4_000_000;
+
+/** Все данные приложения (прогресс, журнал, свои композиции, калибровка, настройки) одной строкой. */
+export function exportBackup(): string {
+  const data: Record<string, string> = {};
+  try {
+    for (let i = 0; i < window.localStorage.length; i++) {
+      const key = window.localStorage.key(i);
+      if (!key?.startsWith(STORAGE_PREFIX)) continue;
+      const value = window.localStorage.getItem(key);
+      if (value !== null) data[key] = value;
+    }
+  } catch {
+    // хранилище недоступно — копия будет пустой
+  }
+  return JSON.stringify({ app: 'ravvast-trainer', version: 1, data });
+}
+
+/** Разбирает резервную копию. Возвращает пары ключ-значение или null, если файл не подходит. */
+export function parseBackup(text: string): [string, string][] | null {
+  if (text.length > MAX_BACKUP_CHARS) return null;
+  let raw: unknown;
+  try {
+    raw = JSON.parse(text);
+  } catch {
+    return null;
+  }
+  if (!isRecord(raw) || raw.app !== 'ravvast-trainer' || !isRecord(raw.data)) return null;
+  const pairs: [string, string][] = [];
+  for (const [key, value] of Object.entries(raw.data)) {
+    // Чужие ключи не трогаем: хранилище общее для всего адреса сайта.
+    if (key.startsWith(STORAGE_PREFIX) && typeof value === 'string') pairs.push([key, value]);
+  }
+  return pairs.length ? pairs : null;
+}
+
+/** Записывает резервную копию поверх текущих данных. Возвращает число записей или null. */
+export function importBackup(store: KeyValueStore, text: string): number | null {
+  const pairs = parseBackup(text);
+  if (!pairs) return null;
+  try {
+    for (const [key, value] of pairs) store.setItem(key, value);
+  } catch {
+    return null;
+  }
+  return pairs.length;
 }
 
 export function removeImported(store: KeyValueStore, id: string): void {

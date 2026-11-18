@@ -1,13 +1,28 @@
 import { parseCompositionJson } from '../core/composition';
+import { RAMP_START } from '../core/fragment';
 import { DIFFICULTIES, type Difficulty } from '../core/judge';
 import { type Progress, bestAccuracy, loadProgress, starsFor } from '../core/progress';
 import type { Composition } from '../core/types';
-import { loadBuiltin, loadImported, removeImported, saveImported } from '../data';
-import { type AppCtx, type Screen, h } from './dom';
+import { focusDrill, generateDrills } from '../core/drills';
+import { dayKey, secondsOn, streak, tongueStats } from '../core/history';
+import {
+  exportBackup,
+  importBackup,
+  loadBuiltin,
+  loadHistory,
+  loadImported,
+  removeImported,
+  saveImported,
+} from '../data';
+import { type AppCtx, type Screen, h, noteOf, storeDifficulty, storedDifficulty } from './dom';
 import { canInstall, onInstallChange, promptInstall } from './install';
 
-const DIFFICULTY_KEY = 'ravvast-trainer:difficulty';
 const MAX_FILE_BYTES = 1_000_000;
+const MAX_BACKUP_BYTES = 4_000_000;
+/** Дневная цель занятий, минут. */
+const GOAL_MINUTES = 10;
+/** С какой доли пропусков поле считается слабым. */
+const WEAK_MISS_RATE = 0.2;
 const LEVELS = { 1: 'Просто', 2: 'Средне', 3: 'Сложно' } as const;
 
 const EXAMPLE = `{
@@ -20,13 +35,8 @@ const EXAMPLE = `{
   ]
 }`;
 
-function readDifficulty(ctx: AppCtx): Difficulty {
-  const v = ctx.store.getItem(DIFFICULTY_KEY);
-  return v === 'easy' || v === 'hard' ? v : 'normal';
-}
-
 export function homeScreen(ctx: AppCtx): Screen {
-  let difficulty = readDifficulty(ctx);
+  let difficulty = storedDifficulty(ctx);
   const list = h('div', { class: 'list' });
   const levelRow = h('div', {
     class: 'segmented four',
@@ -182,7 +192,7 @@ export function homeScreen(ctx: AppCtx): Screen {
             'aria-pressed': String(d === difficulty),
             onclick: () => {
               difficulty = d;
-              ctx.store.setItem(DIFFICULTY_KEY, d);
+              storeDifficulty(ctx, d);
               renderDifficulty();
               renderList();
             },
@@ -260,6 +270,152 @@ export function homeScreen(ctx: AppCtx): Screen {
           : '',
       ),
     );
+  }
+
+  // --- статистика занятий: серия дней, цель на сегодня, слабые поля ---
+  const statsBox = h('section', { class: 'stats', 'aria-label': 'Статистика занятий' });
+  function renderStats(): void {
+    const history = loadHistory(ctx.store);
+    if (history.length === 0) {
+      statsBox.replaceChildren(
+        h('p', { class: 'meta' }, 'Сыграйте композицию — здесь появятся серия дней и слабые поля.'),
+      );
+      return;
+    }
+    const today = dayKey(new Date());
+    const minutes = Math.round(secondsOn(history, today) / 60);
+    const fill = h('div', { class: 'goal-fill' });
+    fill.style.width = `${Math.min(100, (minutes / GOAL_MINUTES) * 100).toFixed(0)}%`;
+    const known = tongueStats(history);
+    const weak = known.filter((s) => s.missRate >= WEAK_MISS_RATE).slice(0, 3);
+    const drill = weak.length
+      ? focusDrill(
+          ctx.scale,
+          weak.map((s) => s.tongue),
+        )
+      : null;
+    statsBox.replaceChildren(
+      h(
+        'div',
+        { class: 'stats-row' },
+        h('span', {}, 'Серия: ', h('strong', {}, `${streak(history, today)} дн.`)),
+        h('span', {}, 'Сегодня: ', h('strong', {}, `${minutes} из ${GOAL_MINUTES} мин`)),
+      ),
+      h('div', { class: 'goal', role: 'presentation' }, fill),
+      h(
+        'p',
+        { class: 'meta' },
+        weak.length
+          ? `Слабые поля: ${weak
+              .map((s) => `${noteOf(ctx.scale, s.tongue)} (${Math.round(s.missRate * 100)}% пропусков)`)
+              .join(', ')}`
+          : known.length
+            ? 'Слабых полей нет: все поля попадают уверенно.'
+            : 'Пока мало ударов, чтобы назвать слабые поля.',
+      ),
+      drill
+        ? h(
+            'button',
+            {
+              class: 'btn',
+              type: 'button',
+              onclick: () => ctx.play(drill, difficulty, { kind: 'drill' }),
+            },
+            'Упражнение на слабые поля',
+          )
+        : '',
+    );
+  }
+
+  // --- упражнения на технику: генерируются под строй, в рекорды не идут ---
+  const drillList = h('div', { class: 'list' });
+  function renderDrills(): void {
+    drillList.replaceChildren(
+      ...generateDrills(ctx.scale).map((d) =>
+        h(
+          'article',
+          { class: 'card' },
+          h('div', { class: 'card-head' }, h('h3', {}, d.title)),
+          h(
+            'p',
+            { class: 'meta' },
+            [d.level ? LEVELS[d.level] : '', `${d.bpm} уд/мин`, `нот: ${d.notes.length}`]
+              .filter(Boolean)
+              .join(' · '),
+          ),
+          h(
+            'div',
+            { class: 'row' },
+            h(
+              'button',
+              {
+                class: 'btn primary',
+                type: 'button',
+                onclick: () => ctx.play(d, difficulty, { kind: 'drill' }),
+              },
+              'Играть',
+            ),
+            h(
+              'button',
+              {
+                class: 'btn',
+                type: 'button',
+                onclick: () =>
+                  ctx.play(d, difficulty, { kind: 'drill', loop: true, tempo: RAMP_START }),
+              },
+              'С разгоном темпа',
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  // --- резервная копия: телефон может очистить данные сайта ---
+  const backupMsg = h('p', { class: 'meta', role: 'status' });
+  const backupInput = h('input', {
+    type: 'file',
+    accept: '.json,application/json',
+    hidden: true,
+    onchange: async () => {
+      const file = backupInput.files?.[0];
+      backupInput.value = '';
+      if (!file) return;
+      if (file.size > MAX_BACKUP_BYTES) {
+        backupMsg.textContent = 'Файл слишком большой для резервной копии.';
+        return;
+      }
+      let text: string;
+      try {
+        text = await file.text();
+      } catch {
+        backupMsg.textContent = 'Не удалось прочитать файл.';
+        return;
+      }
+      if (
+        !window.confirm(
+          'Восстановить данные из файла? Текущий прогресс, свои композиции и калибровка будут заменены.',
+        )
+      ) {
+        return;
+      }
+      const count = importBackup(ctx.store, text);
+      if (count === null) {
+        backupMsg.textContent = 'Это не резервная копия тренажёра.';
+        return;
+      }
+      // Настройки микрофона и калибровка читаются при запуске — перезагружаем страницу.
+      window.location.reload();
+    },
+  });
+  function saveBackup(): void {
+    const url = URL.createObjectURL(new Blob([exportBackup()], { type: 'application/json' }));
+    const link = h('a', { href: url, download: `rav-backup-${dayKey(new Date())}.json` });
+    document.body.append(link);
+    link.click();
+    link.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    backupMsg.textContent = 'Копия сохранена в загрузки.';
   }
 
   function renderList(): void {
@@ -349,6 +505,7 @@ export function homeScreen(ctx: AppCtx): Screen {
       'Свободная игра и проверка распознавания',
     ),
     installBox,
+    statsBox,
     h('h2', {}, 'Чем играть'),
     inputBox,
     h('h2', {}, 'Сложность игры'),
@@ -363,6 +520,30 @@ export function homeScreen(ctx: AppCtx): Screen {
     ),
     fileInput,
     message,
+    h('h2', {}, 'Упражнения'),
+    drillList,
+    h(
+      'details',
+      { class: 'format' },
+      h('summary', {}, 'Резервная копия'),
+      h(
+        'p',
+        { class: 'meta' },
+        'Прогресс, свои композиции и калибровка хранятся в браузере и могут пропасть при очистке данных. Сохраните копию в файл.',
+      ),
+      h(
+        'div',
+        { class: 'row' },
+        h('button', { class: 'btn', type: 'button', onclick: saveBackup }, 'Сохранить копию'),
+        h(
+          'button',
+          { class: 'btn', type: 'button', onclick: () => backupInput.click() },
+          'Восстановить из файла',
+        ),
+      ),
+      backupInput,
+      backupMsg,
+    ),
     h(
       'details',
       { class: 'format' },
@@ -380,6 +561,8 @@ export function homeScreen(ctx: AppCtx): Screen {
   renderInstall();
   renderDifficulty();
   renderList();
+  renderStats();
+  renderDrills();
 
   return {
     el,

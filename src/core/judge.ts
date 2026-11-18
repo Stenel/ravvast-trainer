@@ -47,6 +47,7 @@ export class GameSession {
   maxCombo = 0;
   readonly counts: Record<Grade, number> = { perfect: 0, good: 0, miss: 0 };
   private readonly states: NoteState[];
+  private readonly offsets: (number | null)[];
   private firstPending = 0;
 
   constructor(
@@ -54,6 +55,12 @@ export class GameSession {
     readonly difficulty: Difficulty,
   ) {
     this.states = notes.map(() => 'pending');
+    this.offsets = notes.map(() => null);
+  }
+
+  /** Отклонение удара от ноты в секундах (минус — раньше срока); null — нота не сыграна. */
+  offset(index: number): number | null {
+    return this.offsets[index] ?? null;
   }
 
   state(index: number): NoteState {
@@ -98,6 +105,7 @@ export class GameSession {
       if (grade === 'miss') continue;
       const points = POINTS[grade] * multiplier(this.combo);
       this.states[i] = grade;
+      this.offsets[i] = offset;
       this.counts[grade]++;
       this.score += points;
       this.combo++;

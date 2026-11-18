@@ -1,5 +1,6 @@
 import type { MicInput } from '../audio/mic';
 import type { Synth } from '../audio/synth';
+import type { SessionKind } from '../core/history';
 import type { Difficulty } from '../core/judge';
 import type { KeyValueStore } from '../core/progress';
 import type { Composition, Scale } from '../core/types';
@@ -18,8 +19,31 @@ export interface AppCtx {
   calibrate(): void;
   accuracy(): void;
   free(): void;
-  play(comp: Composition, difficulty: Difficulty): void;
+  play(comp: Composition, difficulty: Difficulty, opts?: PlayOptions): void;
   practice(comp: Composition): void;
+}
+
+/** Как запустить игру: обычный проход, цикл по фрагменту с разгоном темпа или упражнение. */
+export interface PlayOptions {
+  /** Доля от темпа композиции, 1 — как записано. */
+  tempo?: number;
+  /** После прохода начинать заново, прибавляя темп за чистую игру. */
+  loop?: boolean;
+  /** Что это за проход — для истории; рекорды пишутся только для 'game'. */
+  kind?: SessionKind;
+  /** Композиция, из которой вырезан фрагмент. */
+  parent?: Composition;
+}
+
+const DIFFICULTY_KEY = 'ravvast-trainer:difficulty';
+
+export function storedDifficulty(ctx: AppCtx): Difficulty {
+  const v = ctx.store.getItem(DIFFICULTY_KEY);
+  return v === 'easy' || v === 'hard' ? v : 'normal';
+}
+
+export function storeDifficulty(ctx: AppCtx, d: Difficulty): void {
+  ctx.store.setItem(DIFFICULTY_KEY, d);
 }
 
 type Attr = string | number | boolean | ((ev: Event) => void);
