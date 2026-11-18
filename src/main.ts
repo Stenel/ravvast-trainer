@@ -25,6 +25,8 @@ const root = document.getElementById('app');
 if (!root) throw new Error('Не найден контейнер #app');
 
 let current: Screen | null = null;
+/** Сколько ждать ответа на запрос микрофона, прежде чем открыть экран без него. */
+const MIC_WAIT_MS = 15_000;
 
 function show(screen: Screen, awake = true): void {
   current?.destroy();
@@ -49,10 +51,23 @@ try {
     }
     if (opening) return;
     opening = true;
-    void mic.start().finally(() => {
+    let opened = false;
+    const go = () => {
+      if (opened) return;
+      opened = true;
+      window.clearTimeout(giveUp);
       opening = false;
       open();
-    });
+    };
+    // Браузер может не ответить на запрос доступа вовсе (вопрос закрыли без ответа):
+    // тогда открываем экран без микрофона, а не оставляем кнопки мёртвыми.
+    const giveUp = window.setTimeout(go, MIC_WAIT_MS);
+    void mic.start().then((ok) => {
+      // Главный экран мог сам запросить доступ и тут же отпустить микрофон («Проверить
+      // доступ»): тогда общий запуск завершился, а микрофон уже выключен — включаем заново.
+      if (!opened && ok && mic.enabled && mic.status !== 'on') void mic.start().then(go, go);
+      else go();
+    }, go);
   };
   const ctx: AppCtx = {
     scale: scales[0],

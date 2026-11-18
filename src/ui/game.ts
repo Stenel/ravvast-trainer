@@ -256,9 +256,16 @@ export function gameScreen(ctx: AppCtx, comp: Composition, difficulty: Difficult
       pausedAt = performance.now();
       cancelAnimationFrame(raf);
     } else if (pausedAt !== null) {
-      startAt += performance.now() - pausedAt;
-      pausedAt = null;
-      raf = requestAnimationFrame(frame);
+      const resume = () => {
+        if (done || document.hidden || pausedAt === null) return;
+        startAt += performance.now() - pausedAt;
+        pausedAt = null;
+        raf = requestAnimationFrame(frame);
+      };
+      // После долгого фона микрофон выключается сам и включается не мгновенно: ждём его,
+      // иначе первые ноты после возврата ушли бы в пропуски.
+      if (ctx.mic.enabled && ctx.mic.status !== 'on') void ctx.mic.start().then(resume, resume);
+      else resume();
     }
   }
   document.addEventListener('visibilitychange', onVisibility);

@@ -1,6 +1,6 @@
 import { MUTED_RATIO, clarityPercent } from '../core/quality';
 import { type RecordedHit, hitsToComposition } from '../core/record';
-import { saveImported } from '../data';
+import { freeImportedId, saveImported } from '../data';
 import { type AppCtx, type Screen, h, levelMeter, noteOf, playTap, topBar } from './dom';
 import { createInstrument } from './instrument';
 
@@ -55,7 +55,8 @@ export function freeScreen(ctx: AppCtx): Screen {
       takeMsg.textContent = 'Запись отменена.';
       return;
     }
-    const comp = hitsToComposition(hits, title, ctx.scale.id);
+    const made = hitsToComposition(hits, title, ctx.scale.id);
+    const comp = made && { ...made, id: freeImportedId(ctx.store, made.id) };
     takeMsg.textContent =
       comp && saveImported(ctx.store, comp)
         ? `Сохранено: «${comp.title}». Она появилась в списке композиций.`
@@ -152,6 +153,8 @@ export function freeScreen(ctx: AppCtx): Screen {
     el,
     destroy() {
       alive = false;
+      // Диагностическая запись не должна идти дальше на других экранах.
+      ctx.mic.endCapture();
       unsubscribe();
       meter.destroy();
       inst.destroy();

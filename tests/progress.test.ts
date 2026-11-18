@@ -40,7 +40,8 @@ describe('progress', () => {
     expect(recordGame(st, 'a', 'normal', 300, 0.9).isRecord).toBe(false);
     expect(recordGame(st, 'a', 'hard', 100, 0.2).isRecord).toBe(true);
     const p = loadProgress(st);
-    expect(p.best.a.normal).toEqual({ score: 500, accuracy: 0.5 });
+    // Счёт и точность — каждый лучший из своих: второй проход был чище, но беднее очками.
+    expect(p.best.a.normal).toEqual({ score: 500, accuracy: 0.9 });
     expect(p.best.a.hard).toEqual({ score: 100, accuracy: 0.2 });
   });
 

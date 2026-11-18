@@ -69,7 +69,9 @@ export class Synth {
       wet.gain.value = REVERB_WET;
       this.master.connect(reverb).connect(wet).connect(compressor);
     }
-    if (this.ctx.state === 'suspended') void this.ctx.resume();
+    // На iOS после звонка состояние бывает 'interrupted', а не 'suspended'.
+    const state: string = this.ctx.state;
+    if (state !== 'running' && state !== 'closed') void this.ctx.resume().catch(() => undefined);
     return this.ctx;
   }
 

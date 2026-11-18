@@ -90,7 +90,12 @@ export function recordGame(
   const entry = (progress.best[compositionId] ??= {});
   const prev = entry[difficulty];
   const isNewRecord = !prev || score > prev.score;
-  if (isNewRecord) entry[difficulty] = { score, accuracy };
+  // Лучший счёт и лучшая точность хранятся независимо: чистый проход с коротким комбо
+  // даёт меньше очков, но звёзды за точность он заслужил.
+  entry[difficulty] = {
+    score: Math.max(score, prev?.score ?? 0),
+    accuracy: Math.max(accuracy, prev?.accuracy ?? 0),
+  };
   if (accuracy >= PASS_ACCURACY && !progress.completed.includes(compositionId)) {
     progress.completed.push(compositionId);
   }

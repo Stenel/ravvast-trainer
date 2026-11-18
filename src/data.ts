@@ -85,6 +85,19 @@ export function saveImported(store: KeyValueStore, comp: Composition): boolean {
   return store.getItem(IMPORTED_KEY) === json;
 }
 
+/**
+ * Свободный идентификатор для новой своей композиции: если такой уже занят, добавляет
+ * номер. Иначе две записи с одинаковым названием затёрли бы друг друга.
+ */
+export function freeImportedId(store: KeyValueStore, id: string): string {
+  const taken = new Set(readImportedRaw(store).map((c) => (c as { id?: unknown })?.id));
+  if (!taken.has(id)) return id;
+  for (let n = 2; ; n++) {
+    const candidate = `${id} (${n})`;
+    if (!taken.has(candidate)) return candidate;
+  }
+}
+
 export function removeImported(store: KeyValueStore, id: string): void {
   const rest = readImportedRaw(store).filter((c) => (c as { id?: unknown })?.id !== id);
   store.setItem(IMPORTED_KEY, JSON.stringify(rest));
