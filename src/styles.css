@@ -275,6 +275,13 @@ select {
   margin-bottom: 12px;
 }
 
+/* Заголовки групп внутри списка занимают всю ширину и при двух колонках. */
+.list > .sub,
+.list > .meta {
+  grid-column: 1 / -1;
+  margin: 6px 0 0;
+}
+
 .card {
   background: var(--panel);
   border-radius: var(--radius);
@@ -471,6 +478,16 @@ select {
 
 .instrument .tongue.strike text {
   fill: #12141f;
+}
+
+/* Упражнения на динамику: громкая нота — жирное кольцо, тихая — тонкое пунктирное. */
+.ring.loud {
+  stroke-width: 12;
+}
+
+.ring.soft {
+  stroke-width: 3;
+  stroke-dasharray: 5 6;
 }
 
 /* Кольцо сошлось с краем: белое кольцо становится жёлтым, поле заливается целиком. */

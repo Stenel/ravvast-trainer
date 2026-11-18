@@ -1,6 +1,7 @@
 import { parseCompositionJson } from '../core/composition';
 import { RAMP_START } from '../core/fragment';
 import { DIFFICULTIES, type Difficulty } from '../core/judge';
+import { dynamicsDrills, rhythmDrills } from '../core/rhythm';
 import { type Progress, bestAccuracy, loadProgress, starsFor } from '../core/progress';
 import type { Composition } from '../core/types';
 import { focusDrill, generateDrills } from '../core/drills';
@@ -330,9 +331,28 @@ export function homeScreen(ctx: AppCtx): Screen {
   // --- упражнения на технику: генерируются под строй, в рекорды не идут ---
   const drillList = h('div', { class: 'list' });
   function renderDrills(): void {
+    const group = (title: string, note: string, drills: Composition[]): (Node | string)[] => [
+      h('h3', { class: 'sub' }, title),
+      h('p', { class: 'meta' }, note),
+      ...drills.map(drillCard),
+    ];
     drillList.replaceChildren(
-      ...generateDrills(ctx.scale).map((d) =>
-        h(
+      ...group(
+        'Ритм',
+        'Только центральное поле: всё внимание на время. В итогах — ровность ритма в миллисекундах.',
+        rhythmDrills(ctx.scale),
+      ),
+      ...group(
+        'Громкость',
+        'Тихие и громкие удары по одному полю. Оценивается только с микрофоном и в счёт не идёт.',
+        dynamicsDrills(ctx.scale),
+      ),
+      ...group('Техника', 'Переходы между полями и работа двух рук.', generateDrills(ctx.scale)),
+    );
+  }
+
+  function drillCard(d: Composition): HTMLElement {
+    return h(
           'article',
           { class: 'card' },
           h('div', { class: 'card-head' }, h('h3', {}, d.title)),
@@ -366,9 +386,7 @@ export function homeScreen(ctx: AppCtx): Screen {
               'С разгоном темпа',
             ),
           ),
-        ),
-      ),
-    );
+        );
   }
 
   // --- резервная копия: телефон может очистить данные сайта ---

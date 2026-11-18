@@ -26,12 +26,17 @@ export interface Scale {
   tongues: Tongue[];
 }
 
+/** Громкость удара в упражнениях на динамику. */
+export type Dynamic = 'soft' | 'loud';
+
 export interface CompositionNote {
   tongue: string;
   /** Начало ноты в долях от начала композиции. */
   beat: number;
   /** Длительность в долях. */
   duration: number;
+  /** Громкость удара; не задана — как удобно. В счёт игры не входит. */
+  dyn?: Dynamic;
 }
 
 export interface Composition {
@@ -49,4 +54,5 @@ export interface TimedNote {
   /** Секунды от начала композиции. */
   time: number;
   duration: number;
+  dyn?: Dynamic;
 }

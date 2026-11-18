@@ -1,7 +1,8 @@
 import { toTimedNotes } from '../core/composition';
 import { DIFFICULTIES, type Difficulty, GameSession, multiplier } from '../core/judge';
 import { PASS_ACCURACY, recordGame } from '../core/progress';
-import type { Composition } from '../core/types';
+import { type DynamicsHit, dynamicsReport, timingSpread } from '../core/rhythm';
+import type { Composition, Dynamic } from '../core/types';
 import { type HitQuality, summarizeQuality } from '../core/quality';
 import { RAMP_START, nextTempo, sliceComposition, weakestWindow } from '../core/fragment';
 import { dayKey } from '../core/history';
@@ -17,6 +18,10 @@ const MIC_GRACE = 0.35;
 const LATENCY_HINT_MS = 15;
 /** Ноты ближе этого (в секундах) считаются одним аккордом. */
 const CHORD_SPREAD = 0.03;
+
+const DYN_WORD: Record<Dynamic, string> = { loud: 'ГРОМКО', soft: 'тихо' };
+/** С какой разницы между громкими и тихими ударами контраст считается хорошим, дБ. */
+const GOOD_CONTRAST_DB = 6;
 
 /** Длина «трудного места», которое предлагается отработать после игры, в долях. */
 const WEAK_SPAN_BEATS = 8;
@@ -106,7 +111,15 @@ export function gameScreen(
           h(
             'span',
             { class: k === 0 ? 'queue-item now' : 'queue-item' },
-            g.map((i) => noteOf(ctx.scale, notes[i].tongue)).join('+'),
+            g.map((i) => noteOf(ctx.scale, notes[i].tongue)).join('+') +
+              // Громкость: у ближайшей ноты словом, у следующих — значком.
+              (notes[g[0]].dyn
+                ? k === 0
+                  ? ` — ${DYN_WORD[notes[g[0]].dyn as Dynamic]}`
+                  : notes[g[0]].dyn === 'loud'
+                    ? ' ●'
+                    : ' ○'
+                : ''),
           ),
         ),
       );
@@ -115,6 +128,9 @@ export function gameScreen(
   }
 
   const quality: (HitQuality & { id: number })[] = [];
+  /** Громкость ударов по нотам с заданной динамикой — только с микрофона. */
+  const dynHits: DynamicsHit[] = [];
+  const hasDynamics = notes.some((n) => n.dyn);
 
   const unsubscribeMic = ctx.mic.subscribe((ev) => {
     if (ev.type === 'sustain') {
@@ -153,6 +169,9 @@ export function gameScreen(
         inst.flash(id, r.grade);
         removeRing(r.index);
         showJudge(r.grade === 'perfect' ? 'Идеально!' : 'Хорошо', r.grade);
+        const dyn = notes[r.index].dyn;
+        // Громкость берём только у реально услышанного поля, не у достроенных нот аккорда.
+        if (dyn && ev.tongues.includes(id)) dynHits.push({ tongue: id, dyn, levelDb: ev.levelDb });
         // Аккорд — один удар: качество учитываем один раз.
         if (counted) continue;
         counted = true;
@@ -260,7 +279,7 @@ export function gameScreen(
         const ring = document.createElementNS(NS, 'circle');
         ring.setAttribute('cx', String(p.x));
         ring.setAttribute('cy', String(p.y));
-        ring.setAttribute('class', 'ring');
+        ring.setAttribute('class', notes[spawn].dyn ? `ring ${notes[spawn].dyn}` : 'ring');
         inst.overlay.append(ring);
         rings.set(spawn, ring);
       }
@@ -365,6 +384,55 @@ export function gameScreen(
     );
   }
 
+  const resultRow = (label: string, value: string) =>
+    h('div', { class: 'result-row' }, h('span', {}, label), h('strong', {}, value));
+
+  /** Ровность ритма и, в упражнениях на динамику, контраст громкости. В счёт не входят. */
+  function skillRows(): (Node | string)[] {
+    const rows: (Node | string)[] = [];
+    const spread = timingSpread(notes.map((_, i) => session.offset(i)));
+    if (spread) {
+      rows.push(resultRow('Ровность ритма', `±${spread.spreadMs} мс`));
+      // С микрофоном среднее смещение уже показано в блоке качества звука.
+      if (spread.meanMs !== 0 && quality.length === 0) {
+        rows.push(
+          resultRow(
+            'В среднем',
+            `на ${Math.abs(spread.meanMs)} мс ${spread.meanMs > 0 ? 'позже' : 'раньше'}`,
+          ),
+        );
+      }
+    }
+    if (hasDynamics) {
+      const d = dynamicsReport(dynHits);
+      if (d) {
+        const contrast = Math.round(d.contrastDb);
+        rows.push(
+          resultRow('Громкие громче тихих', `на ${contrast} дБ`),
+          resultRow('Удары нужной громкости', `${d.correct} из ${d.total}`),
+          h(
+            'p',
+            { class: 'hint' },
+            contrast >= GOOD_CONTRAST_DB
+              ? 'Контраст хороший: тихие и громкие удары различаются отчётливо.'
+              : contrast > 0
+                ? `Контраст слабый: попробуйте бить тихие ещё мягче. Хорошо — от ${GOOD_CONTRAST_DB} дБ.`
+                : 'Тихие удары вышли не тише громких.',
+          ),
+        );
+      } else {
+        rows.push(
+          h(
+            'p',
+            { class: 'hint' },
+            'Громкость оценивается только с микрофоном, на настоящем инструменте.',
+          ),
+        );
+      }
+    }
+    return rows;
+  }
+
   /** Итог прохода в цикле: темп растёт после чистой игры, цикл идёт сам. */
   function showLoopResult(): void {
     const acc = session.accuracy;
@@ -383,6 +451,7 @@ export function gameScreen(
           { class: 'modal-card' },
           h('h2', {}, mastered ? 'Освоено на полном темпе!' : `Темп ${pc(tempo)}: точность ${pc(acc)}`),
           timeline(null),
+          ...skillRows(),
           h(
             'p',
             { class: 'hint' },
@@ -467,6 +536,7 @@ export function gameScreen(
           row('Хорошо', String(session.counts.good)),
           row('Пропущено', String(session.counts.miss)),
           timeline(weak),
+          ...skillRows(),
           weak
             ? h(
                 'button',

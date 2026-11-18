@@ -67,7 +67,12 @@ export function parseComposition(raw: unknown, scale: Scale): Result<Composition
         errors.push(`${where}: "duration" должна быть числом больше 0 и не больше ${MAX_DURATION}.`);
         return;
       }
-      notes.push({ tongue: tongueId, beat: n.beat, duration: n.duration });
+      notes.push({
+        tongue: tongueId,
+        beat: n.beat,
+        duration: n.duration,
+        ...(n.dyn === 'soft' || n.dyn === 'loud' ? { dyn: n.dyn } : {}),
+      });
     });
   }
 
@@ -106,5 +111,6 @@ export function toTimedNotes(comp: Composition, tempoFactor = 1): TimedNote[] {
     tongue: n.tongue,
     time: n.beat * beatSec,
     duration: n.duration * beatSec,
+    ...(n.dyn ? { dyn: n.dyn } : {}),
   }));
 }
